@@ -48,11 +48,13 @@ void RenderThread::Init(HWND hwnd, HINSTANCE hinstance, Maths::IVec2 resIn)
 	thread = std::thread(&RenderThread::ThreadFunc, this);
 }
 
-void RenderThread::Resize(IVec2 newRes)
+void RenderThread::Resize(s32 x, s32 y)
 {
-	resize.lock();
-	storedRes = IVec2(Util::MaxI(newRes.x, 32), Util::MaxI(newRes.y, 32));
-	resize.unlock();
+	u64 packed = (u32)(x) | ((u64)(y) << 32);
+	if (packed != lastRes)
+		resized = true;
+	lastRes = packed;
+	storedRes = packed;
 }
 
 bool RenderThread::HasFinished() const
@@ -114,7 +116,8 @@ void RenderThread::CopyToScreen(s64 dt)
 
 void RenderThread::HandleResize()
 {
-	res = storedRes;
+	res.x = (s32)(storedRes & 0xffffffff);
+	res.y = (s32)(storedRes >> 32);
 }
 
 void RenderThread::InitThread()
@@ -175,9 +178,10 @@ void RenderThread::ThreadFunc()
 		if ((params & ADVANCED) && (delta.Dot() || dir.Dot() || fovDir))
 			params = (LaunchParams)(params | CLEAR);
 		
+		HandleResize();
+
 		if (!DrawFrame(appData, renderData))
 			break;
-		HandleResize();
 		
 		if (screenshot)
 		{
@@ -251,14 +255,24 @@ void RenderThread::UnloadAssets()
 	*/
 }
 
-void RenderThread::SendErrorMessage(const std::string& err)
+void RenderThread::SendErrorPopup(const std::string& err)
 {
 	MessageBoxA(appData.hWnd, err.c_str(), "Error!", NULL);
 }
 
-void RenderThread::SendErrorMessage(const std::wstring& err)
+void RenderThread::SendErrorPopup(const std::wstring& err)
 {
 	MessageBoxW(appData.hWnd, err.c_str(), L"Error!", NULL);
+}
+
+void RenderThread::LogMessage(const std::string& msg)
+{
+	OutputDebugStringA(msg.c_str());
+}
+
+void RenderThread::LogMessage(const std::wstring& msg)
+{
+	OutputDebugStringW(msg.c_str());
 }
 
 VkSurfaceKHR RenderThread::CreateSurfaceWin32(VkInstance instance, HINSTANCE hInstance, HWND window, VkAllocationCallbacks* allocator)
@@ -284,7 +298,7 @@ VkSurfaceKHR RenderThread::CreateSurfaceWin32(VkInstance instance, HINSTANCE hIn
 				text += L"Unknown error";
 			else
 				text += s;
-			SendErrorMessage(text);
+			SendErrorPopup(text);
 		}
 		surface = VK_NULL_HANDLE;
 	}
@@ -316,7 +330,7 @@ bool RenderThread::InitDevice(AppData &init)
 
 	if (!instance_ret)
 	{
-		SendErrorMessage(instance_ret.error().message());
+		SendErrorPopup(instance_ret.error().message());
 		return false;
 	}
 	init.instance = instance_ret.value();
@@ -339,7 +353,7 @@ bool RenderThread::InitDevice(AppData &init)
 					err += reason + '\n';
 			}
 		}
-		SendErrorMessage(err);
+		SendErrorPopup(err);
 		return false;
 	}
 	vkb::PhysicalDevice physical_device = phys_device_ret.value();
@@ -348,7 +362,7 @@ bool RenderThread::InitDevice(AppData &init)
 	auto device_ret = device_builder.build();
 	if (!device_ret)
 	{
-		SendErrorMessage(device_ret.error().message());
+		SendErrorPopup(device_ret.error().message());
 		return false;
 	}
 	init.device = device_ret.value();
@@ -363,7 +377,7 @@ bool RenderThread::CreateSwapchain(AppData &init)
 	auto swap_ret = swapchain_builder.set_old_swapchain(init.swapchain).build();
 	if (!swap_ret)
 	{
-		SendErrorMessage(swap_ret.error().message() + ' ' + std::to_string(swap_ret.vk_result()));
+		SendErrorPopup(swap_ret.error().message() + ' ' + std::to_string(swap_ret.vk_result()));
 		return false;
 	}
 	vkb::destroy_swapchain(init.swapchain);
@@ -376,7 +390,7 @@ bool RenderThread::GetQueues(AppData &init, RenderData &data)
 	auto gq = init.device.get_queue(vkb::QueueType::graphics);
 	if (!gq.has_value())
 	{
-		SendErrorMessage("failed to get graphics queue: " + gq.error().message());
+		SendErrorPopup("failed to get graphics queue: " + gq.error().message());
 		return false;
 	}
 	data.graphics_queue = gq.value();
@@ -384,7 +398,7 @@ bool RenderThread::GetQueues(AppData &init, RenderData &data)
 	auto pq = init.device.get_queue(vkb::QueueType::present);
 	if (!pq.has_value())
 	{
-		SendErrorMessage("failed to get present queue: " + pq.error().message());
+		SendErrorPopup("failed to get present queue: " + pq.error().message());
 		return false;
 	}
 	data.present_queue = pq.value();
@@ -431,7 +445,7 @@ bool RenderThread::CreateRenderPass(AppData &init, RenderData &data)
 
 	if (init.disp.createRenderPass(&render_pass_info, nullptr, &data.render_pass) != VK_SUCCESS)
 	{
-		SendErrorMessage("failed to create render pass");
+		SendErrorPopup("failed to create render pass");
 		return false;
 	}
 	return true;
@@ -463,7 +477,7 @@ bool RenderThread::CreateGraphicsPipeline(AppData &init, RenderData &data)
 	VkShaderModule frag_module = CreateShaderModule(init, frag_code);
 	if (vert_module == VK_NULL_HANDLE || frag_module == VK_NULL_HANDLE)
 	{
-		SendErrorMessage("failed to create shader module");
+		SendErrorPopup("failed to create shader module");
 		return false;
 	}
 
@@ -548,7 +562,7 @@ bool RenderThread::CreateGraphicsPipeline(AppData &init, RenderData &data)
 
 	if (init.disp.createPipelineLayout(&pipeline_layout_info, nullptr, &data.pipeline_layout) != VK_SUCCESS)
 	{
-		SendErrorMessage("failed to create pipeline layout");
+		SendErrorPopup("failed to create pipeline layout");
 		return false;
 	}
 
@@ -577,7 +591,7 @@ bool RenderThread::CreateGraphicsPipeline(AppData &init, RenderData &data)
 
 	if (init.disp.createGraphicsPipelines(VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &data.graphics_pipeline) != VK_SUCCESS)
 	{
-		SendErrorMessage("failed to create pipline");
+		SendErrorPopup("failed to create pipline");
 		return false;
 	}
 
@@ -622,7 +636,7 @@ bool RenderThread::CreateCommandPool(AppData &init, RenderData &data)
 
 	if (init.disp.createCommandPool(&pool_info, nullptr, &data.command_pool) != VK_SUCCESS)
 	{
-		SendErrorMessage("failed to create command pool");
+		SendErrorPopup("failed to create command pool");
 		return false;
 	}
 	return true;
@@ -640,7 +654,7 @@ bool RenderThread::CreateCommandBuffers(AppData &init, RenderData &data)
 
 	if (init.disp.allocateCommandBuffers(&allocInfo, data.command_buffers.data()) != VK_SUCCESS)
 	{
-		SendErrorMessage("failed to allocate command buffers");
+		SendErrorPopup("failed to allocate command buffers");
 		return false;
 	}
 
@@ -651,7 +665,7 @@ bool RenderThread::CreateCommandBuffers(AppData &init, RenderData &data)
 
 		if (init.disp.beginCommandBuffer(data.command_buffers[i], &begin_info) != VK_SUCCESS)
 		{
-			SendErrorMessage("failed to begin recording command buffer");
+			SendErrorPopup("failed to begin recording command buffer");
 			return false;
 		}
 
@@ -690,7 +704,7 @@ bool RenderThread::CreateCommandBuffers(AppData &init, RenderData &data)
 
 		if (init.disp.endCommandBuffer(data.command_buffers[i]) != VK_SUCCESS)
 		{
-			SendErrorMessage("failed to record command buffer");
+			SendErrorPopup("failed to record command buffer");
 			return false;
 		}
 	}
@@ -715,7 +729,7 @@ bool RenderThread::CreateSyncObjects(AppData &init, RenderData &data)
 	{
 		if (init.disp.createSemaphore(&semaphore_info, nullptr, &data.finished_semaphore[i]) != VK_SUCCESS)
 		{
-			SendErrorMessage("failed to create sync objects");
+			SendErrorPopup("failed to create sync objects");
 			return false;
 		}
 	}
@@ -725,7 +739,7 @@ bool RenderThread::CreateSyncObjects(AppData &init, RenderData &data)
 		if (init.disp.createSemaphore(&semaphore_info, nullptr, &data.available_semaphores[i]) != VK_SUCCESS ||
 			init.disp.createFence(&fence_info, nullptr, &data.in_flight_fences[i]) != VK_SUCCESS)
 		{
-			SendErrorMessage("failed to create sync objects");
+			SendErrorPopup("failed to create sync objects");
 			return false;
 		}
 	}
@@ -734,6 +748,11 @@ bool RenderThread::CreateSyncObjects(AppData &init, RenderData &data)
 
 bool RenderThread::RecreateSwapchain(AppData &init, RenderData &data)
 {
+	HandleResize();
+	if (res.x <= 0 || res.y <= 0)
+	{
+		return true;
+	}
 	init.disp.deviceWaitIdle();
 	init.disp.destroyCommandPool(data.command_pool, nullptr);
 
@@ -748,12 +767,21 @@ bool RenderThread::RecreateSwapchain(AppData &init, RenderData &data)
 	if (!CreateFramebuffers(init, data)) return false;
 	if (!CreateCommandPool(init, data)) return false;
 	if (!CreateCommandBuffers(init, data)) return false;
-
+	resized = false;
 	return true;
 }
 
 bool RenderThread::DrawFrame(AppData &init, RenderData &data)
 {
+	if (resized)
+	{
+		HandleResize();
+		if (res.x <= 0 || res.y <= 0)
+			return true;
+		else
+			return RecreateSwapchain(init, data);
+	}
+
 	init.disp.waitForFences(1, &data.in_flight_fences[data.current_frame], VK_TRUE, UINT64_MAX);
 
 	uint32_t image_index = 0;
@@ -766,7 +794,7 @@ bool RenderThread::DrawFrame(AppData &init, RenderData &data)
 	}
 	else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
 	{
-		SendErrorMessage("failed to acquire swapchain image. Error " + result);
+		SendErrorPopup("failed to acquire swapchain image. Error " + result);
 		return false;
 	}
 
@@ -796,7 +824,7 @@ bool RenderThread::DrawFrame(AppData &init, RenderData &data)
 
 	if (init.disp.queueSubmit(data.graphics_queue, 1, &submitInfo, data.in_flight_fences[data.current_frame]) != VK_SUCCESS)
 	{
-		SendErrorMessage("failed to submit draw command buffer");
+		SendErrorPopup("failed to submit draw command buffer");
 		return false;
 	}
 
@@ -813,13 +841,13 @@ bool RenderThread::DrawFrame(AppData &init, RenderData &data)
 	present_info.pImageIndices = &image_index;
 
 	result = init.disp.queuePresentKHR(data.present_queue, &present_info);
-	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
+	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || resized)
 	{
 		return RecreateSwapchain(init, data);
 	}
 	else if (result != VK_SUCCESS)
 	{
-		SendErrorMessage("failed to present swapchain image");
+		SendErrorPopup("failed to present swapchain image");
 		return false;
 	}
 

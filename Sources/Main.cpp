@@ -102,7 +102,7 @@ LRESULT CALLBACK WndProc(_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM wParam, 
 		PostQuitMessage(0);
 		break;
 	case WM_SIZE:
-		th.Resize(Maths::IVec2(LOWORD(lParam), HIWORD(lParam)));
+		th.Resize(LOWORD(lParam), HIWORD(lParam));
 		break;
 	case WM_GETMINMAXINFO:
 	{

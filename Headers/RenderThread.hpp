@@ -68,7 +68,7 @@ public:
 	~RenderThread() {};
 
 	void Init(HWND hwnd, HINSTANCE hInstance, Maths::IVec2 res);
-	void Resize(Maths::IVec2 newRes);
+	void Resize(s32 x, s32 y);
 	bool HasFinished() const;
 	bool HasCrashed() const;
 	void Quit();
@@ -81,16 +81,17 @@ private:
 	std::atomic_bool exit;
 	std::atomic_bool crashed;
 	std::atomic_bool queueLock;
+	std::atomic_bool resized;
 	std::mutex mouseLock;
 	std::mutex keyLock;
-	std::mutex resize;
 	std::bitset<256> keyDown = 0;
 	std::bitset<256> keyPress = 0;
 	std::bitset<256> keyToggle = 0;
 	AppData appData = {};
 	RenderData renderData = {};
 	Maths::IVec2 res;
-	Maths::IVec2 storedRes;
+	u64 lastRes = 0;
+	std::atomic<u64> storedRes;
 	Maths::Vec2 storedDelta;
 	Maths::Vec3 position = Maths::Vec3(-5.30251f, 6.38824f, -7.8891f);
 	Maths::Vec2 rotation = Maths::Vec2(static_cast<f32>(M_PI_2) - 1.059891f, 0.584459f);
@@ -117,6 +118,8 @@ private:
 	bool RecreateSwapchain(AppData &init, RenderData &data);
 	bool DrawFrame(AppData &init, RenderData &data);
 	void Cleanup(AppData &init, RenderData &data);
-	void SendErrorMessage(const std::wstring &err);
-	void SendErrorMessage(const std::string &err);
+	void SendErrorPopup(const std::wstring &err);
+	void SendErrorPopup(const std::string &err);
+	void LogMessage(const std::wstring& msg);
+	void LogMessage(const std::string& msg);
 };
