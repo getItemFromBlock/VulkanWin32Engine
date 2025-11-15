@@ -61,12 +61,12 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		{
 			MessageBoxW(NULL, L"Could not set window dpi awareness !", szTitle, NULL);
 		}
-		HWND hWnd = CreateWindowExW(WS_EX_OVERLAPPEDWINDOW, szClassName, szTitle, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 800, 450, NULL, NULL, hInstance, NULL);
+		HWND hWnd = CreateWindowExW(WS_EX_OVERLAPPEDWINDOW, szClassName, szTitle, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 800, 600, NULL, NULL, hInstance, NULL);
 
 		ShowWindow(hWnd, nCmdShow);
 		UpdateWindow(hWnd);
 
-		th.Init(hWnd, Maths::IVec2(800, 600));
+		th.Init(hWnd, hInstance, Maths::IVec2(800, 600));
 		LONG_PTR lExStyle = GetWindowLongPtr(hWnd, GWL_EXSTYLE);
 		lExStyle &= ~(WS_EX_DLGMODALFRAME | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE);
 		SetWindowLongPtr(hWnd, GWL_EXSTYLE, lExStyle);
@@ -79,7 +79,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 
 		// Main message loop:
 		MSG msg;
-		while (GetMessageW(&msg, NULL, 0, 0))
+		while (GetMessageW(&msg, NULL, 0, 0) && !th.HasCrashed())
 		{
 			TranslateMessage(&msg);
 			DispatchMessageW(&msg);
@@ -98,6 +98,7 @@ LRESULT CALLBACK WndProc(_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM wParam, 
 	case WM_CLEAR:
 		break;
 	case WM_DESTROY:
+		th.Quit();
 		PostQuitMessage(0);
 		break;
 	case WM_SIZE:
@@ -111,7 +112,7 @@ LRESULT CALLBACK WndProc(_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM wParam, 
 		break;
 	}
 	case WM_KEYDOWN:
-		th.SetKeyState(wParam, true);
+		th.SetKeyState((u8)(wParam), true);
 		if (wParam == VK_F11)
 			ToggleFullscreen(hWnd, !fullscreen);
 		break;
@@ -130,7 +131,7 @@ LRESULT CALLBACK WndProc(_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM wParam, 
 			}
 			break;
 		}
-		th.SetKeyState(wParam, false);
+		th.SetKeyState((u8)(wParam), false);
 		break;
 	case WM_SYSKEYDOWN:
 		return DefWindowProc(hWnd, message, wParam, lParam);
@@ -188,7 +189,7 @@ void ToggleFullscreen(HWND hwnd, bool full)
 		// taskbar if the window is in the maximized state.
 		savedInfos.maximized = !!IsZoomed(hwnd);
 		if (savedInfos.maximized)
-		::SendMessage(hwnd, WM_SYSCOMMAND, SC_RESTORE, 0);
+		SendMessage(hwnd, WM_SYSCOMMAND, SC_RESTORE, 0);
 		savedInfos.style = GetWindowLong(hwnd, GWL_STYLE);
 		savedInfos.exStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
 		GetWindowRect(hwnd, &savedInfos.windowRect);
@@ -199,9 +200,9 @@ void ToggleFullscreen(HWND hwnd, bool full)
 	if (fullscreen)
 	{
 		// Set new window style and size.
-		SetWindowLong(hwnd, GWL_STYLE,
+		SetWindowLong(	hwnd, GWL_STYLE,
 						savedInfos.style & ~(WS_CAPTION | WS_THICKFRAME));
-		SetWindowLong(hwnd, GWL_EXSTYLE,
+		SetWindowLong(	hwnd, GWL_EXSTYLE,
 						savedInfos.exStyle & ~(WS_EX_DLGMODALFRAME |
 						WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE));
 
@@ -209,28 +210,27 @@ void ToggleFullscreen(HWND hwnd, bool full)
 		// not resize.
 		MONITORINFO monitor_info;
 		monitor_info.cbSize = sizeof(monitor_info);
-		GetMonitorInfo(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST),
-					 &monitor_info);
+		GetMonitorInfo(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &monitor_info);
 		RECT window_rect(monitor_info.rcMonitor);
-		SetWindowPos(hwnd, NULL, window_rect.left, window_rect.top,
-					 window_rect.right - window_rect.left, window_rect.bottom - window_rect.top,
-					 SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+		SetWindowPos(	hwnd, NULL, window_rect.left, window_rect.top,
+						window_rect.right - window_rect.left, window_rect.bottom - window_rect.top,
+						SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
 	}
 	else
 	{
-	// Reset original window style and size.	The multiple window size/moves
-	// here are ugly, but if SetWindowPos() doesn't redraw, the taskbar won't be
-	// repainted.	Better-looking methods welcome.
-	SetWindowLong(hwnd, GWL_STYLE, savedInfos.style);
-	SetWindowLong(hwnd, GWL_EXSTYLE, savedInfos.exStyle);
+		// Reset original window style and size.	The multiple window size/moves
+		// here are ugly, but if SetWindowPos() doesn't redraw, the taskbar won't be
+		// repainted.	Better-looking methods welcome.
+		SetWindowLong(hwnd, GWL_STYLE, savedInfos.style);
+		SetWindowLong(hwnd, GWL_EXSTYLE, savedInfos.exStyle);
 
-	// On restore, resize to the previous saved rect size.
-	RECT new_rect(savedInfos.windowRect);
-	SetWindowPos(hwnd, NULL, new_rect.left, new_rect.top,
-				 new_rect.right - new_rect.left, new_rect.bottom - new_rect.top,
-				 SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+		// On restore, resize to the previous saved rect size.
+		RECT new_rect(savedInfos.windowRect);
+		SetWindowPos(	hwnd, NULL, new_rect.left, new_rect.top,
+						new_rect.right - new_rect.left, new_rect.bottom - new_rect.top,
+						SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
 
-	if (savedInfos.maximized)
-		SendMessageA(hwnd, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
+		if (savedInfos.maximized)
+			SendMessageA(hwnd, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
 	}
 }
