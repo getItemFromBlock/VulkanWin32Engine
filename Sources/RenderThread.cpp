@@ -24,7 +24,7 @@ std::string GetFormattedTime()
 	return std::string(buffer);
 }
 
-std::string LoadFile(const std::string& path)
+std::string LoadFile(const std::string &path)
 {
 	std::ifstream file = std::ifstream(path, std::ios_base::binary | std::ios_base::ate);
 	if (!file.is_open())
@@ -106,14 +106,13 @@ void RenderThread::InitThread()
 void RenderThread::ThreadFunc()
 {
 	InitThread();
+	LoadAssets();
 
 	if (!InitVulkan())
 	{
 		crashed = true;
 		return;
 	}
-
-	LoadAssets();
 
 	f64 last = 0;
 	while (!exit)
@@ -156,7 +155,7 @@ void RenderThread::ThreadFunc()
 		
 		HandleResize();
 
-		if (!DrawFrame(appData, renderData))
+		if (!DrawFrame())
 			break;
 		
 		if (screenshot)
@@ -173,7 +172,7 @@ void RenderThread::ThreadFunc()
 
 	appData.disp.deviceWaitIdle();
 	UnloadAssets();
-	Cleanup(appData, renderData);
+	Cleanup();
 
 	if (!exit)
 		crashed = true;
@@ -181,15 +180,16 @@ void RenderThread::ThreadFunc()
 
 bool RenderThread::InitVulkan()
 {
-	return	InitDevice(appData) &&
-			CreateSwapchain(appData) &&
-			GetQueues(appData, renderData) &&
-			CreateRenderPass(appData, renderData) &&
-			CreateGraphicsPipeline(appData, renderData) &&
-			CreateFramebuffers(appData, renderData) &&
-			CreateCommandPool(appData, renderData) &&
-			CreateCommandBuffers(appData, renderData) &&
-			CreateSyncObjects(appData, renderData);
+	return	InitDevice() &&
+			CreateSwapchain() &&
+			GetQueues() &&
+			CreateRenderPass() &&
+			CreateGraphicsPipeline() &&
+			CreateFramebuffers() &&
+			CreateCommandPool() &&
+			CreateVertexBuffer(sceneData.mesh) &&
+			CreateCommandBuffers() &&
+			CreateSyncObjects();
 }
 
 void RenderThread::LoadAssets()
@@ -232,22 +232,24 @@ void RenderThread::UnloadAssets()
 	*/
 }
 
-void RenderThread::SendErrorPopup(const std::string& err)
+void RenderThread::SendErrorPopup(const std::string &err)
 {
+	LogMessage(err);
 	MessageBoxA(appData.hWnd, err.c_str(), "Error!", NULL);
 }
 
-void RenderThread::SendErrorPopup(const std::wstring& err)
+void RenderThread::SendErrorPopup(const std::wstring &err)
 {
+	LogMessage(err);
 	MessageBoxW(appData.hWnd, err.c_str(), L"Error!", NULL);
 }
 
-void RenderThread::LogMessage(const std::string& msg)
+void RenderThread::LogMessage(const std::string &msg)
 {
 	OutputDebugStringA(msg.c_str());
 }
 
-void RenderThread::LogMessage(const std::wstring& msg)
+void RenderThread::LogMessage(const std::wstring &msg)
 {
 	OutputDebugStringW(msg.c_str());
 }
@@ -282,7 +284,7 @@ VkSurfaceKHR RenderThread::CreateSurfaceWin32(VkInstance instance, HINSTANCE hIn
 	return surface;
 }
 
-bool RenderThread::InitDevice(AppData &init)
+bool RenderThread::InitDevice()
 {
 	vkb::InstanceBuilder instanceBuilder;
 	instanceBuilder.set_app_name("Vulkan Demo").set_app_version(VK_MAKE_VERSION(1, 0, 0));
@@ -310,19 +312,19 @@ bool RenderThread::InitDevice(AppData &init)
 		SendErrorPopup(instanceRet.error().message());
 		return false;
 	}
-	init.instance = instanceRet.value();
-	init.instDisp = init.instance.make_table();
-	init.surface = CreateSurfaceWin32(init.instance, init.hInstance, init.hWnd);
+	appData.instance = instanceRet.value();
+	appData.instDisp = appData.instance.make_table();
+	appData.surface = CreateSurfaceWin32(appData.instance, appData.hInstance, appData.hWnd);
 
-	vkb::PhysicalDeviceSelector physDeviceSelector(init.instance);
+	vkb::PhysicalDeviceSelector physDeviceSelector(appData.instance);
 
-	auto physDeviceRet = physDeviceSelector.set_surface(init.surface).select();
+	auto physDeviceRet = physDeviceSelector.set_surface(appData.surface).select();
 	if (!physDeviceRet)
 	{
 		std::string err = physDeviceRet.error().message() + '\n';
 		if (physDeviceRet.error() == vkb::PhysicalDeviceError::no_suitable_device)
 		{
-			const auto& detailedReasons = physDeviceRet.detailed_failure_reasons();
+			const auto &detailedReasons = physDeviceRet.detailed_failure_reasons();
 			if (!detailedReasons.empty())
 			{
 				err += "GPU Selection failure reasons:\n";
@@ -342,50 +344,57 @@ bool RenderThread::InitDevice(AppData &init)
 		SendErrorPopup(deviceRet.error().message());
 		return false;
 	}
-	init.device = deviceRet.value();
-	init.disp = init.device.make_table();
+	appData.device = deviceRet.value();
+	appData.disp = appData.device.make_table();
 
 	return true;
 }
 
-bool RenderThread::CreateSwapchain(AppData &init)
+bool RenderThread::CreateSwapchain()
 {
-	vkb::SwapchainBuilder swapchainBuilder{ init.device };
-	auto swapRet = swapchainBuilder.set_old_swapchain(init.swapchain).build();
+	vkb::SwapchainBuilder swapchainBuilder{ appData.device };
+	u32 x, y;
+	auto swapRet = swapchainBuilder.set_old_swapchain(appData.swapchain).build(x, y);
+	if (x == 0 || y == 0)
+	{
+		res.x = x;
+		res.y = y;
+		return false;
+	}
 	if (!swapRet)
 	{
 		SendErrorPopup(swapRet.error().message() + ' ' + std::to_string(swapRet.vk_result()));
 		return false;
 	}
-	vkb::destroy_swapchain(init.swapchain);
-	init.swapchain = swapRet.value();
+	vkb::destroy_swapchain(appData.swapchain);
+	appData.swapchain = swapRet.value();
 	return true;
 }
 
-bool RenderThread::GetQueues(AppData &init, RenderData &data)
+bool RenderThread::GetQueues()
 {
-	auto gq = init.device.get_queue(vkb::QueueType::graphics);
+	auto gq = appData.device.get_queue(vkb::QueueType::graphics);
 	if (!gq.has_value())
 	{
 		SendErrorPopup("failed to get graphics queue: " + gq.error().message());
 		return false;
 	}
-	data.graphicsQueue = gq.value();
+	renderData.graphicsQueue = gq.value();
 
-	auto pq = init.device.get_queue(vkb::QueueType::present);
+	auto pq = appData.device.get_queue(vkb::QueueType::present);
 	if (!pq.has_value())
 	{
 		SendErrorPopup("failed to get present queue: " + pq.error().message());
 		return false;
 	}
-	data.presentQueue = pq.value();
+	renderData.presentQueue = pq.value();
 	return true;
 }
 
-bool RenderThread::CreateRenderPass(AppData &init, RenderData &data)
+bool RenderThread::CreateRenderPass()
 {
 	VkAttachmentDescription colorAttachment = {};
-	colorAttachment.format = init.swapchain.image_format;
+	colorAttachment.format = appData.swapchain.image_format;
 	colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
 	colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 	colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -420,7 +429,7 @@ bool RenderThread::CreateRenderPass(AppData &init, RenderData &data)
 	renderPassInfo.dependencyCount = 1;
 	renderPassInfo.pDependencies = &dependency;
 
-	if (init.disp.createRenderPass(&renderPassInfo, nullptr, &data.renderPass) != VK_SUCCESS)
+	if (appData.disp.createRenderPass(&renderPassInfo, nullptr, &renderData.renderPass) != VK_SUCCESS)
 	{
 		SendErrorPopup("failed to create render pass");
 		return false;
@@ -428,7 +437,7 @@ bool RenderThread::CreateRenderPass(AppData &init, RenderData &data)
 	return true;
 }
 
-VkShaderModule RenderThread::CreateShaderModule(AppData &init, const std::string &code)
+VkShaderModule RenderThread::CreateShaderModule(const std::string &code)
 {
 	VkShaderModuleCreateInfo createInfo = {};
 	createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -436,7 +445,7 @@ VkShaderModule RenderThread::CreateShaderModule(AppData &init, const std::string
 	createInfo.pCode = reinterpret_cast<const u32*>(code.data());
 
 	VkShaderModule shaderModule;
-	if (init.disp.createShaderModule(&createInfo, nullptr, &shaderModule) != VK_SUCCESS)
+	if (appData.disp.createShaderModule(&createInfo, nullptr, &shaderModule) != VK_SUCCESS)
 		return VK_NULL_HANDLE;
 
 	return shaderModule;
@@ -452,9 +461,9 @@ VkVertexInputBindingDescription RenderThread::GetBindingDescription()
 	return bindingDescription;
 }
 
-std::array<VkVertexInputAttributeDescription, 2> RenderThread::GetAttributeDescriptions()
+std::array<VkVertexInputAttributeDescription, 3> RenderThread::GetAttributeDescriptions()
 {
-	std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions = {};
+	std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions = {};
 
 	attributeDescriptions[0].binding = 0;
 	attributeDescriptions[0].location = 0;
@@ -463,20 +472,25 @@ std::array<VkVertexInputAttributeDescription, 2> RenderThread::GetAttributeDescr
 
 	attributeDescriptions[1].binding = 0;
 	attributeDescriptions[1].location = 1;
-	attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-	attributeDescriptions[1].offset = offsetof(Resource::Vertex, col);
+	attributeDescriptions[1].format = VK_FORMAT_R32G32_SFLOAT;
+	attributeDescriptions[1].offset = offsetof(Resource::Vertex, uv);
+
+	attributeDescriptions[2].binding = 0;
+	attributeDescriptions[2].location = 2;
+	attributeDescriptions[2].format = VK_FORMAT_R32G32B32_SFLOAT;
+	attributeDescriptions[2].offset = offsetof(Resource::Vertex, col);
 
 	return attributeDescriptions;
 }
 
-bool RenderThread::CreateGraphicsPipeline(AppData &init, RenderData &data)
+bool RenderThread::CreateGraphicsPipeline()
 {
 	const std::filesystem::path defaultPath = std::filesystem::current_path();
-	auto vertCode = LoadFile(std::filesystem::path(defaultPath).append("Assets/Shaders/triangle.vert.spv").string());
-	auto fragCode = LoadFile(std::filesystem::path(defaultPath).append("Assets/Shaders/triangle.frag.spv").string());
+	std::string vertCode = LoadFile(std::filesystem::path(defaultPath).append("Assets/Shaders/triangle.vert.spv").string());
+	std::string fragCode = LoadFile(std::filesystem::path(defaultPath).append("Assets/Shaders/triangle.frag.spv").string());
 
-	VkShaderModule vertModule = CreateShaderModule(init, vertCode);
-	VkShaderModule fragModule = CreateShaderModule(init, fragCode);
+	VkShaderModule vertModule = CreateShaderModule(vertCode);
+	VkShaderModule fragModule = CreateShaderModule(fragCode);
 	if (vertModule == VK_NULL_HANDLE || fragModule == VK_NULL_HANDLE)
 	{
 		SendErrorPopup("failed to create shader module");
@@ -497,10 +511,15 @@ bool RenderThread::CreateGraphicsPipeline(AppData &init, RenderData &data)
 
 	VkPipelineShaderStageCreateInfo shaderStages[] = { vertStageInfo, fragStageInfo };
 
+	auto bindingDescription = GetBindingDescription();
+	auto attributeDescriptions = GetAttributeDescriptions();
+
 	VkPipelineVertexInputStateCreateInfo vertexInputInfo = {};
 	vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-	vertexInputInfo.vertexBindingDescriptionCount = 0;
-	vertexInputInfo.vertexAttributeDescriptionCount = 0;
+	vertexInputInfo.vertexBindingDescriptionCount = 1;
+	vertexInputInfo.vertexAttributeDescriptionCount = static_cast<u32>(attributeDescriptions.size());
+	vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+	vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
 
 	VkPipelineInputAssemblyStateCreateInfo inputAssembly = {};
 	inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -510,14 +529,14 @@ bool RenderThread::CreateGraphicsPipeline(AppData &init, RenderData &data)
 	VkViewport viewport = {};
 	viewport.x = 0.0f;
 	viewport.y = 0.0f;
-	viewport.width = (float)init.swapchain.extent.width;
-	viewport.height = (float)init.swapchain.extent.height;
+	viewport.width = (float)appData.swapchain.extent.width;
+	viewport.height = (float)appData.swapchain.extent.height;
 	viewport.minDepth = 0.0f;
 	viewport.maxDepth = 1.0f;
 
 	VkRect2D scissor = {};
 	scissor.offset = { 0, 0 };
-	scissor.extent = init.swapchain.extent;
+	scissor.extent = appData.swapchain.extent;
 
 	VkPipelineViewportStateCreateInfo viewportState = {};
 	viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -562,7 +581,7 @@ bool RenderThread::CreateGraphicsPipeline(AppData &init, RenderData &data)
 	pipelineLayoutInfo.setLayoutCount = 0;
 	pipelineLayoutInfo.pushConstantRangeCount = 0;
 
-	if (init.disp.createPipelineLayout(&pipelineLayoutInfo, nullptr, &data.pipelineLayout) != VK_SUCCESS)
+	if (appData.disp.createPipelineLayout(&pipelineLayoutInfo, nullptr, &renderData.pipelineLayout) != VK_SUCCESS)
 	{
 		SendErrorPopup("failed to create pipeline layout");
 		return false;
@@ -572,7 +591,7 @@ bool RenderThread::CreateGraphicsPipeline(AppData &init, RenderData &data)
 
 	VkPipelineDynamicStateCreateInfo dynamicInfo = {};
 	dynamicInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-	dynamicInfo.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+	dynamicInfo.dynamicStateCount = static_cast<u32>(dynamicStates.size());
 	dynamicInfo.pDynamicStates = dynamicStates.data();
 
 	VkGraphicsPipelineCreateInfo pipelineInfo = {};
@@ -586,55 +605,55 @@ bool RenderThread::CreateGraphicsPipeline(AppData &init, RenderData &data)
 	pipelineInfo.pMultisampleState = &multisampling;
 	pipelineInfo.pColorBlendState = &colorBlending;
 	pipelineInfo.pDynamicState = &dynamicInfo;
-	pipelineInfo.layout = data.pipelineLayout;
-	pipelineInfo.renderPass = data.renderPass;
+	pipelineInfo.layout = renderData.pipelineLayout;
+	pipelineInfo.renderPass = renderData.renderPass;
 	pipelineInfo.subpass = 0;
 	pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 
-	if (init.disp.createGraphicsPipelines(VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &data.graphicsPipeline) != VK_SUCCESS)
+	if (appData.disp.createGraphicsPipelines(VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &renderData.graphicsPipeline) != VK_SUCCESS)
 	{
 		SendErrorPopup("failed to create pipline");
 		return false;
 	}
 
-	init.disp.destroyShaderModule(fragModule, nullptr);
-	init.disp.destroyShaderModule(vertModule, nullptr);
+	appData.disp.destroyShaderModule(fragModule, nullptr);
+	appData.disp.destroyShaderModule(vertModule, nullptr);
 	return true;
 }
 
-bool RenderThread::CreateFramebuffers(AppData &init, RenderData &data)
+bool RenderThread::CreateFramebuffers()
 {
-	data.swapchainImages = init.swapchain.get_images().value();
-	data.swapchainImageViews = init.swapchain.get_image_views().value();
+	renderData.swapchainImages = appData.swapchain.get_images().value();
+	renderData.swapchainImageViews = appData.swapchain.get_image_views().value();
 
-	data.framebuffers.resize(data.swapchainImageViews.size());
+	renderData.framebuffers.resize(renderData.swapchainImageViews.size());
 
-	for (u32 i = 0; i < data.swapchainImageViews.size(); i++)
+	for (u32 i = 0; i < renderData.swapchainImageViews.size(); i++)
 	{
-		VkImageView attachments[] = { data.swapchainImageViews[i] };
+		VkImageView attachments[] = { renderData.swapchainImageViews[i] };
 
 		VkFramebufferCreateInfo framebufferInfo = {};
 		framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		framebufferInfo.renderPass = data.renderPass;
+		framebufferInfo.renderPass = renderData.renderPass;
 		framebufferInfo.attachmentCount = 1;
 		framebufferInfo.pAttachments = attachments;
-		framebufferInfo.width = init.swapchain.extent.width;
-		framebufferInfo.height = init.swapchain.extent.height;
+		framebufferInfo.width = appData.swapchain.extent.width;
+		framebufferInfo.height = appData.swapchain.extent.height;
 		framebufferInfo.layers = 1;
 
-		if (init.disp.createFramebuffer(&framebufferInfo, nullptr, &data.framebuffers[i]) != VK_SUCCESS)
+		if (appData.disp.createFramebuffer(&framebufferInfo, nullptr, &renderData.framebuffers[i]) != VK_SUCCESS)
 			return false;
 	}
 	return true;
 }
 
-bool RenderThread::CreateCommandPool(AppData &init, RenderData &data)
+bool RenderThread::CreateCommandPool()
 {
 	VkCommandPoolCreateInfo poolInfo = {};
 	poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-	poolInfo.queueFamilyIndex = init.device.get_queue_index(vkb::QueueType::graphics).value();
+	poolInfo.queueFamilyIndex = appData.device.get_queue_index(vkb::QueueType::graphics).value();
 
-	if (init.disp.createCommandPool(&poolInfo, nullptr, &data.commandPool) != VK_SUCCESS)
+	if (appData.disp.createCommandPool(&poolInfo, nullptr, &renderData.commandPool) != VK_SUCCESS)
 	{
 		SendErrorPopup("failed to create command pool");
 		return false;
@@ -642,28 +661,68 @@ bool RenderThread::CreateCommandPool(AppData &init, RenderData &data)
 	return true;
 }
 
-bool RenderThread::CreateCommandBuffers(AppData &init, RenderData &data)
+bool RenderThread::CreateVertexBuffer(const Resource::Mesh &m)
 {
-	data.commandBuffers.resize(data.framebuffers.size());
+	const auto &vertices = m.GetVertices();
+
+	VkBufferCreateInfo bufferInfo = {};
+	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	bufferInfo.size = sizeof(vertices[0]) * vertices.size();
+	bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+	bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	if (appData.disp.createBuffer(&bufferInfo, nullptr, &renderData.vertexBuffer) != VK_SUCCESS)
+	{
+		SendErrorPopup("failed to create vertex buffer!");
+		return false;
+	}
+
+	VkMemoryRequirements memRequirements;
+	appData.disp.getBufferMemoryRequirements(renderData.vertexBuffer, &memRequirements);
+
+	VkMemoryAllocateInfo allocInfo{};
+	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocInfo.allocationSize = memRequirements.size;
+	allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	
+	if (appData.disp.allocateMemory(&allocInfo, nullptr, &renderData.vertexBufferMemory) != VK_SUCCESS)
+	{
+		SendErrorPopup("failed to allocate vertex buffer memory!");
+		return false;
+	}
+
+	appData.disp.bindBufferMemory(renderData.vertexBuffer, renderData.vertexBufferMemory, 0);
+
+	void *data;
+	appData.disp.mapMemory(renderData.vertexBufferMemory, 0, bufferInfo.size, 0, &data);
+	std::memcpy(data, vertices.data(), bufferInfo.size);
+	appData.disp.unmapMemory(renderData.vertexBufferMemory);
+
+	return true;
+}
+
+bool RenderThread::CreateCommandBuffers()
+{
+	renderData.commandBuffers.resize(renderData.framebuffers.size());
 
 	VkCommandBufferAllocateInfo allocInfo = {};
 	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	allocInfo.commandPool = data.commandPool;
+	allocInfo.commandPool = renderData.commandPool;
 	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	allocInfo.commandBufferCount = (uint32_t)data.commandBuffers.size();
+	allocInfo.commandBufferCount = (u32)renderData.commandBuffers.size();
 
-	if (init.disp.allocateCommandBuffers(&allocInfo, data.commandBuffers.data()) != VK_SUCCESS)
+	if (appData.disp.allocateCommandBuffers(&allocInfo, renderData.commandBuffers.data()) != VK_SUCCESS)
 	{
 		SendErrorPopup("failed to allocate command buffers");
 		return false;
 	}
 
-	for (u32 i = 0; i < data.commandBuffers.size(); i++)
+	for (u32 i = 0; i < renderData.commandBuffers.size(); i++)
 	{
 		VkCommandBufferBeginInfo beginInfo = {};
 		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
-		if (init.disp.beginCommandBuffer(data.commandBuffers[i], &beginInfo) != VK_SUCCESS)
+		if (appData.disp.beginCommandBuffer(renderData.commandBuffers[i], &beginInfo) != VK_SUCCESS)
 		{
 			SendErrorPopup("failed to begin recording command buffer");
 			return false;
@@ -671,10 +730,10 @@ bool RenderThread::CreateCommandBuffers(AppData &init, RenderData &data)
 
 		VkRenderPassBeginInfo renderPassInfo = {};
 		renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-		renderPassInfo.renderPass = data.renderPass;
-		renderPassInfo.framebuffer = data.framebuffers[i];
+		renderPassInfo.renderPass = renderData.renderPass;
+		renderPassInfo.framebuffer = renderData.framebuffers[i];
 		renderPassInfo.renderArea.offset = { 0, 0 };
-		renderPassInfo.renderArea.extent = init.swapchain.extent;
+		renderPassInfo.renderArea.extent = appData.swapchain.extent;
 		VkClearValue clearColor{ { { 0.0f, 0.0f, 0.0f, 1.0f } } };
 		renderPassInfo.clearValueCount = 1;
 		renderPassInfo.pClearValues = &clearColor;
@@ -682,27 +741,31 @@ bool RenderThread::CreateCommandBuffers(AppData &init, RenderData &data)
 		VkViewport viewport = {};
 		viewport.x = 0.0f;
 		viewport.y = 0.0f;
-		viewport.width = (float)init.swapchain.extent.width;
-		viewport.height = (float)init.swapchain.extent.height;
+		viewport.width = (float)appData.swapchain.extent.width;
+		viewport.height = (float)appData.swapchain.extent.height;
 		viewport.minDepth = 0.0f;
 		viewport.maxDepth = 1.0f;
 
 		VkRect2D scissor = {};
 		scissor.offset = { 0, 0 };
-		scissor.extent = init.swapchain.extent;
+		scissor.extent = appData.swapchain.extent;
 
-		init.disp.cmdSetViewport(data.commandBuffers[i], 0, 1, &viewport);
-		init.disp.cmdSetScissor(data.commandBuffers[i], 0, 1, &scissor);
+		appData.disp.cmdSetViewport(renderData.commandBuffers[i], 0, 1, &viewport);
+		appData.disp.cmdSetScissor(renderData.commandBuffers[i], 0, 1, &scissor);
 
-		init.disp.cmdBeginRenderPass(data.commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+		appData.disp.cmdBeginRenderPass(renderData.commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-		init.disp.cmdBindPipeline(data.commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, data.graphicsPipeline);
+		appData.disp.cmdBindPipeline(renderData.commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, renderData.graphicsPipeline);
 
-		init.disp.cmdDraw(data.commandBuffers[i], 3, 1, 0, 0);
+		VkBuffer vertexBuffers[] = { renderData.vertexBuffer };
+		VkDeviceSize offsets[] = { 0 };
+		appData.disp.cmdBindVertexBuffers(renderData.commandBuffers[i], 0, 1, vertexBuffers, offsets);
 
-		init.disp.cmdEndRenderPass(data.commandBuffers[i]);
+		appData.disp.cmdDraw(renderData.commandBuffers[i], (u32)(sceneData.mesh.GetVertices().size()), 1, 0, 0);
 
-		if (init.disp.endCommandBuffer(data.commandBuffers[i]) != VK_SUCCESS)
+		appData.disp.cmdEndRenderPass(renderData.commandBuffers[i]);
+
+		if (appData.disp.endCommandBuffer(renderData.commandBuffers[i]) != VK_SUCCESS)
 		{
 			SendErrorPopup("failed to record command buffer");
 			return false;
@@ -711,12 +774,12 @@ bool RenderThread::CreateCommandBuffers(AppData &init, RenderData &data)
 	return true;
 }
 
-bool RenderThread::CreateSyncObjects(AppData &init, RenderData &data)
+bool RenderThread::CreateSyncObjects()
 {
-	data.availableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
-	data.finishedSemaphore.resize(init.swapchain.image_count);
-	data.inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
-	data.imageInFlight.resize(init.swapchain.image_count, VK_NULL_HANDLE);
+	renderData.availableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+	renderData.finishedSemaphore.resize(appData.swapchain.image_count);
+	renderData.inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
+	renderData.imageInFlight.resize(appData.swapchain.image_count, VK_NULL_HANDLE);
 
 	VkSemaphoreCreateInfo semaphoreInfo = {};
 	semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -725,9 +788,9 @@ bool RenderThread::CreateSyncObjects(AppData &init, RenderData &data)
 	fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 	fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-	for (u32 i = 0; i < init.swapchain.image_count; i++)
+	for (u32 i = 0; i < appData.swapchain.image_count; i++)
 	{
-		if (init.disp.createSemaphore(&semaphoreInfo, nullptr, &data.finishedSemaphore[i]) != VK_SUCCESS)
+		if (appData.disp.createSemaphore(&semaphoreInfo, nullptr, &renderData.finishedSemaphore[i]) != VK_SUCCESS)
 		{
 			SendErrorPopup("failed to create sync objects");
 			return false;
@@ -736,8 +799,8 @@ bool RenderThread::CreateSyncObjects(AppData &init, RenderData &data)
 
 	for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
-		if (init.disp.createSemaphore(&semaphoreInfo, nullptr, &data.availableSemaphores[i]) != VK_SUCCESS ||
-			init.disp.createFence(&fenceInfo, nullptr, &data.inFlightFences[i]) != VK_SUCCESS)
+		if (appData.disp.createSemaphore(&semaphoreInfo, nullptr, &renderData.availableSemaphores[i]) != VK_SUCCESS ||
+			appData.disp.createFence(&fenceInfo, nullptr, &renderData.inFlightFences[i]) != VK_SUCCESS)
 		{
 			SendErrorPopup("failed to create sync objects");
 			return false;
@@ -746,32 +809,54 @@ bool RenderThread::CreateSyncObjects(AppData &init, RenderData &data)
 	return true;
 }
 
-bool RenderThread::RecreateSwapchain(AppData &init, RenderData &data)
+bool RenderThread::RecreateSwapchain()
 {
 	HandleResize();
 	if (res.x <= 0 || res.y <= 0)
 	{
 		return true;
 	}
-	init.disp.deviceWaitIdle();
-	init.disp.destroyCommandPool(data.commandPool, nullptr);
-
-	for (auto framebuffer : data.framebuffers)
+	appData.disp.deviceWaitIdle();
+	if (renderData.commandPool != VK_NULL_HANDLE)
 	{
-		init.disp.destroyFramebuffer(framebuffer, nullptr);
+		appData.disp.destroyCommandPool(renderData.commandPool, nullptr);
+		renderData.commandPool = VK_NULL_HANDLE;
+
+		for (u32 i = 0; i < renderData.framebuffers.size(); i++)
+			appData.disp.destroyFramebuffer(renderData.framebuffers[i], nullptr);
+
+		appData.swapchain.destroy_image_views(renderData.swapchainImageViews);
 	}
 
-	init.swapchain.destroy_image_views(data.swapchainImageViews);
-
-	if (!CreateSwapchain(init)) return false;
-	if (!CreateFramebuffers(init, data)) return false;
-	if (!CreateCommandPool(init, data)) return false;
-	if (!CreateCommandBuffers(init, data)) return false;
+	if (!CreateSwapchain())
+	{
+		if (res.x <= 0 || res.y <= 0)
+			return true;
+		return false;
+	}
+	if (!CreateFramebuffers()) return false;
+	if (!CreateCommandPool()) return false;
+	if (!CreateCommandBuffers()) return false;
 	resized = false;
 	return true;
 }
 
-bool RenderThread::DrawFrame(AppData &init, RenderData &data)
+u32 RenderThread::FindMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties)
+{
+	VkPhysicalDeviceMemoryProperties memProperties;
+	appData.instDisp.getPhysicalDeviceMemoryProperties(appData.device.physical_device, &memProperties);
+	
+	for (u32 i = 0; i < memProperties.memoryTypeCount; i++)
+	{
+		if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
+			return i;
+	}
+
+	SendErrorPopup("failed to find suitable memory type!");
+	return -1;
+}
+
+bool RenderThread::DrawFrame()
 {
 	if (resized)
 	{
@@ -779,18 +864,18 @@ bool RenderThread::DrawFrame(AppData &init, RenderData &data)
 		if (res.x <= 0 || res.y <= 0)
 			return true;
 		else
-			return RecreateSwapchain(init, data);
+			return RecreateSwapchain();
 	}
 
-	init.disp.waitForFences(1, &data.inFlightFences[data.currentFrame], VK_TRUE, UINT64_MAX);
+	appData.disp.waitForFences(1, &renderData.inFlightFences[renderData.currentFrame], VK_TRUE, UINT64_MAX);
 
-	uint32_t imgIndex = 0;
-	VkResult result = init.disp.acquireNextImageKHR(
-		init.swapchain, UINT64_MAX, data.availableSemaphores[data.currentFrame], VK_NULL_HANDLE, &imgIndex);
+	u32 imgIndex = 0;
+	VkResult result = appData.disp.acquireNextImageKHR(
+		appData.swapchain, UINT64_MAX, renderData.availableSemaphores[renderData.currentFrame], VK_NULL_HANDLE, &imgIndex);
 
 	if (result == VK_ERROR_OUT_OF_DATE_KHR)
 	{
-		return RecreateSwapchain(init, data);
+		return RecreateSwapchain();
 	}
 	else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
 	{
@@ -798,31 +883,31 @@ bool RenderThread::DrawFrame(AppData &init, RenderData &data)
 		return false;
 	}
 
-	if (data.imageInFlight[imgIndex] != VK_NULL_HANDLE)
+	if (renderData.imageInFlight[imgIndex] != VK_NULL_HANDLE)
 	{
-		init.disp.waitForFences(1, &data.imageInFlight[imgIndex], VK_TRUE, UINT64_MAX);
+		appData.disp.waitForFences(1, &renderData.imageInFlight[imgIndex], VK_TRUE, UINT64_MAX);
 	}
-	data.imageInFlight[imgIndex] = data.inFlightFences[data.currentFrame];
+	renderData.imageInFlight[imgIndex] = renderData.inFlightFences[renderData.currentFrame];
 
 	VkSubmitInfo submitInfo = {};
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-	VkSemaphore waitSemaphores[] = { data.availableSemaphores[data.currentFrame] };
+	VkSemaphore waitSemaphores[] = { renderData.availableSemaphores[renderData.currentFrame] };
 	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 	submitInfo.waitSemaphoreCount = 1;
 	submitInfo.pWaitSemaphores = waitSemaphores;
 	submitInfo.pWaitDstStageMask = waitStages;
 
 	submitInfo.commandBufferCount = 1;
-	submitInfo.pCommandBuffers = &data.commandBuffers[imgIndex];
+	submitInfo.pCommandBuffers = &renderData.commandBuffers[imgIndex];
 
-	VkSemaphore signalSemaphores[] = { data.finishedSemaphore[imgIndex] };
+	VkSemaphore signalSemaphores[] = { renderData.finishedSemaphore[imgIndex] };
 	submitInfo.signalSemaphoreCount = 1;
 	submitInfo.pSignalSemaphores = signalSemaphores;
 
-	init.disp.resetFences(1, &data.inFlightFences[data.currentFrame]);
+	appData.disp.resetFences(1, &renderData.inFlightFences[renderData.currentFrame]);
 
-	if (init.disp.queueSubmit(data.graphicsQueue, 1, &submitInfo, data.inFlightFences[data.currentFrame]) != VK_SUCCESS)
+	if (appData.disp.queueSubmit(renderData.graphicsQueue, 1, &submitInfo, renderData.inFlightFences[renderData.currentFrame]) != VK_SUCCESS)
 	{
 		SendErrorPopup("failed to submit draw command buffer");
 		return false;
@@ -834,16 +919,16 @@ bool RenderThread::DrawFrame(AppData &init, RenderData &data)
 	presentInfo.waitSemaphoreCount = 1;
 	presentInfo.pWaitSemaphores = signalSemaphores;
 
-	VkSwapchainKHR swapChains[] = { init.swapchain };
+	VkSwapchainKHR swapChains[] = { appData.swapchain };
 	presentInfo.swapchainCount = 1;
 	presentInfo.pSwapchains = swapChains;
 
 	presentInfo.pImageIndices = &imgIndex;
 
-	result = init.disp.queuePresentKHR(data.presentQueue, &presentInfo);
+	result = appData.disp.queuePresentKHR(renderData.presentQueue, &presentInfo);
 	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || resized)
 	{
-		return RecreateSwapchain(init, data);
+		return RecreateSwapchain();
 	}
 	else if (result != VK_SUCCESS)
 	{
@@ -851,37 +936,39 @@ bool RenderThread::DrawFrame(AppData &init, RenderData &data)
 		return false;
 	}
 
-	data.currentFrame = (data.currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+	renderData.currentFrame = (renderData.currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 	return true;
 }
 
-void RenderThread::Cleanup(AppData &init, RenderData &data)
+void RenderThread::Cleanup()
 {
-	for (u32 i = 0; i < init.swapchain.image_count; i++)
+	for (u32 i = 0; i < appData.swapchain.image_count; i++)
 	{
-		init.disp.destroySemaphore(data.finishedSemaphore[i], nullptr);
+		appData.disp.destroySemaphore(renderData.finishedSemaphore[i], nullptr);
 	}
 	for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
-		init.disp.destroySemaphore(data.availableSemaphores[i], nullptr);
-		init.disp.destroyFence(data.inFlightFences[i], nullptr);
+		appData.disp.destroySemaphore(renderData.availableSemaphores[i], nullptr);
+		appData.disp.destroyFence(renderData.inFlightFences[i], nullptr);
 	}
 
-	init.disp.destroyCommandPool(data.commandPool, nullptr);
+	appData.disp.destroyCommandPool(renderData.commandPool, nullptr);
 
-	for (auto framebuffer : data.framebuffers)
+	for (u32 i = 0; i < renderData.framebuffers.size(); i++)
 	{
-		init.disp.destroyFramebuffer(framebuffer, nullptr);
+		appData.disp.destroyFramebuffer(renderData.framebuffers[i], nullptr);
 	}
 
-	init.disp.destroyPipeline(data.graphicsPipeline, nullptr);
-	init.disp.destroyPipelineLayout(data.pipelineLayout, nullptr);
-	init.disp.destroyRenderPass(data.renderPass, nullptr);
+	appData.disp.destroyPipeline(renderData.graphicsPipeline, nullptr);
+	appData.disp.destroyPipelineLayout(renderData.pipelineLayout, nullptr);
+	appData.disp.destroyRenderPass(renderData.renderPass, nullptr);
+	appData.disp.destroyBuffer(renderData.vertexBuffer, nullptr);
+	appData.disp.freeMemory(renderData.vertexBufferMemory, nullptr);
 
-	init.swapchain.destroy_image_views(data.swapchainImageViews);
+	appData.swapchain.destroy_image_views(renderData.swapchainImageViews);
 
-	vkb::destroy_swapchain(init.swapchain);
-	vkb::destroy_device(init.device);
-	vkb::destroy_surface(init.instance, init.surface);
-	vkb::destroy_instance(init.instance);
+	vkb::destroy_swapchain(appData.swapchain);
+	vkb::destroy_device(appData.device);
+	vkb::destroy_surface(appData.instance, appData.surface);
+	vkb::destroy_instance(appData.instance);
 }

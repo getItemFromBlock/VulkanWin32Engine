@@ -897,7 +897,7 @@ class SwapchainBuilder {
         uint32_t graphics_queue_index = detail::QUEUE_INDEX_MAX_VALUE,
         uint32_t present_queue_index = detail::QUEUE_INDEX_MAX_VALUE);
 
-    Result<Swapchain> build() const;
+    Result<Swapchain> build(uint32_t& widthOut, uint32_t& heightOut) const;
 
     // Set the oldSwapchain member of VkSwapchainCreateInfoKHR.
     // For use in rebuilding a swapchain.

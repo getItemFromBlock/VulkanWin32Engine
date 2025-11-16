@@ -60,6 +60,10 @@ struct RenderData
 	std::vector<VkSemaphore> finishedSemaphore;
 	std::vector<VkFence> inFlightFences;
 	std::vector<VkFence> imageInFlight;
+
+	VkBuffer vertexBuffer;
+	VkDeviceMemory vertexBufferMemory;
+
 	size_t currentFrame = 0;
 };
 
@@ -112,24 +116,26 @@ private:
 	void UnloadAssets();
 
 	VkSurfaceKHR CreateSurfaceWin32(VkInstance instance, HINSTANCE hInstance, HWND window, VkAllocationCallbacks *allocator = nullptr);
-	VkShaderModule CreateShaderModule(AppData &init, const std::string &code);
+	VkShaderModule CreateShaderModule(const std::string &code);
 	VkVertexInputBindingDescription GetBindingDescription();
-	std::array<VkVertexInputAttributeDescription, 2> GetAttributeDescriptions();
+	std::array<VkVertexInputAttributeDescription, 3> GetAttributeDescriptions();
 	bool InitVulkan();
-	bool InitDevice(AppData &init);
-	bool CreateSwapchain(AppData &init);
-	bool GetQueues(AppData &init, RenderData &data);
-	bool CreateRenderPass(AppData &init, RenderData &data);
-	bool CreateGraphicsPipeline(AppData &init, RenderData &data);
-	bool CreateFramebuffers(AppData &init, RenderData &data);
-	bool CreateCommandPool(AppData &init, RenderData &data);
-	bool CreateCommandBuffers(AppData &init, RenderData &data);
-	bool CreateSyncObjects(AppData &init, RenderData &data);
-	bool RecreateSwapchain(AppData &init, RenderData &data);
-	bool DrawFrame(AppData &init, RenderData &data);
-	void Cleanup(AppData &init, RenderData &data);
+	bool InitDevice();
+	bool CreateSwapchain();
+	bool GetQueues();
+	bool CreateRenderPass();
+	bool CreateGraphicsPipeline();
+	bool CreateFramebuffers();
+	bool CreateCommandPool();
+	bool CreateVertexBuffer(const Resource::Mesh &m);
+	bool CreateCommandBuffers();
+	bool CreateSyncObjects();
+	bool RecreateSwapchain();
+	u32 FindMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties);
+	bool DrawFrame();
+	void Cleanup();
 	void SendErrorPopup(const std::wstring &err);
 	void SendErrorPopup(const std::string &err);
-	void LogMessage(const std::wstring& msg);
-	void LogMessage(const std::string& msg);
+	void LogMessage(const std::wstring &msg);
+	void LogMessage(const std::string &msg);
 };

@@ -1888,7 +1888,7 @@ SwapchainBuilder::SwapchainBuilder(VkPhysicalDevice const physical_device,
             info.present_queue_index = detail::get_present_queue_index(physical_device, surface, queue_families);
     }
 }
-Result<Swapchain> SwapchainBuilder::build() const {
+Result<Swapchain> SwapchainBuilder::build(uint32_t& widthOut, uint32_t& heightOut) const {
     if (info.surface == VK_NULL_HANDLE) {
         return Result<Swapchain>{ SwapchainError::surface_handle_not_provided };
     }
@@ -1902,6 +1902,13 @@ Result<Swapchain> SwapchainBuilder::build() const {
     if (!surface_support_ret.has_value())
         return Result<Swapchain>{ SwapchainError::failed_query_surface_support_details, surface_support_ret.vk_result() };
     auto surface_support = surface_support_ret.value();
+
+    widthOut = surface_support.capabilities.currentExtent.width;
+    heightOut = surface_support.capabilities.currentExtent.height;
+    if (surface_support.capabilities.currentExtent.width == 0 || surface_support.capabilities.currentExtent.height == 0)
+    {
+        return Result<Swapchain>{ SwapchainError::failed_create_swapchain};
+    }
 
     uint32_t image_count = info.min_image_count;
     if (info.required_min_image_count >= 1) {
