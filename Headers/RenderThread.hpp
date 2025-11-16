@@ -8,6 +8,7 @@
 #include <mutex>
 #include <bitset>
 #include <atomic>
+#include <array>
 
 #define VK_USE_PLATFORM_WIN32_KHR
 #include "vulkan.h"
@@ -15,6 +16,7 @@
 
 #include "Types.hpp"
 #include "Maths/Maths.hpp"
+#include "Resource/Mesh.hpp"
 
 enum LaunchParams : u8
 {
@@ -31,7 +33,7 @@ struct AppData
 	HWND hWnd;
 	HINSTANCE hInstance;
 	vkb::Instance instance;
-	vkb::InstanceDispatchTable inst_disp;
+	vkb::InstanceDispatchTable instDisp;
 	VkSurfaceKHR surface;
 	vkb::Device device;
 	vkb::DispatchTable disp;
@@ -40,25 +42,30 @@ struct AppData
 
 struct RenderData
 {
-	VkQueue graphics_queue;
-	VkQueue present_queue;
+	VkQueue graphicsQueue;
+	VkQueue presentQueue;
 
-	std::vector<VkImage> swapchain_images;
-	std::vector<VkImageView> swapchain_image_views;
+	std::vector<VkImage> swapchainImages;
+	std::vector<VkImageView> swapchainImageViews;
 	std::vector<VkFramebuffer> framebuffers;
 
-	VkRenderPass render_pass;
-	VkPipelineLayout pipeline_layout;
-	VkPipeline graphics_pipeline;
+	VkRenderPass renderPass;
+	VkPipelineLayout pipelineLayout;
+	VkPipeline graphicsPipeline;
 
-	VkCommandPool command_pool;
-	std::vector<VkCommandBuffer> command_buffers;
+	VkCommandPool commandPool;
+	std::vector<VkCommandBuffer> commandBuffers;
 
-	std::vector<VkSemaphore> available_semaphores;
-	std::vector<VkSemaphore> finished_semaphore;
-	std::vector<VkFence> in_flight_fences;
-	std::vector<VkFence> image_in_flight;
-	size_t current_frame = 0;
+	std::vector<VkSemaphore> availableSemaphores;
+	std::vector<VkSemaphore> finishedSemaphore;
+	std::vector<VkFence> inFlightFences;
+	std::vector<VkFence> imageInFlight;
+	size_t currentFrame = 0;
+};
+
+struct SceneData
+{
+	Resource::Mesh mesh;
 };
 
 class RenderThread
@@ -89,6 +96,7 @@ private:
 	std::bitset<256> keyToggle = 0;
 	AppData appData = {};
 	RenderData renderData = {};
+	SceneData sceneData = {};
 	Maths::IVec2 res;
 	u64 lastRes = 0;
 	std::atomic<u64> storedRes;
@@ -105,6 +113,8 @@ private:
 
 	VkSurfaceKHR CreateSurfaceWin32(VkInstance instance, HINSTANCE hInstance, HWND window, VkAllocationCallbacks *allocator = nullptr);
 	VkShaderModule CreateShaderModule(AppData &init, const std::string &code);
+	VkVertexInputBindingDescription GetBindingDescription();
+	std::array<VkVertexInputAttributeDescription, 2> GetAttributeDescriptions();
 	bool InitVulkan();
 	bool InitDevice(AppData &init);
 	bool CreateSwapchain(AppData &init);
