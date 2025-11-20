@@ -18,6 +18,9 @@
 #include "Maths/Maths.hpp"
 #include "Resource/Mesh.hpp"
 
+const u32 MAX_FRAMES_IN_FLIGHT = 2;
+const u32 OBJECT_COUNT = 2000;
+
 enum LaunchParams : u8
 {
 	NONE =			0x0,
@@ -26,6 +29,12 @@ enum LaunchParams : u8
 	BOXDEBUG =		0x4,
 	DENOISE =		0x8,
 	CLEAR =			0x10,
+};
+
+struct UBO
+{
+	Maths::Vec2 invRes;
+	Maths::Vec2 scale;
 };
 
 struct AppData
@@ -55,6 +64,7 @@ struct RenderData
 	VkPipeline graphicsPipeline;
 
 	VkCommandPool commandPool;
+	VkCommandPool transfertCommandPool;
 	std::vector<VkCommandBuffer> commandBuffers;
 	VkCommandBuffer transferCommandBuffer;
 
@@ -62,9 +72,13 @@ struct RenderData
 	std::vector<VkSemaphore> finishedSemaphore;
 	std::vector<VkFence> inFlightFences;
 	std::vector<VkFence> imageInFlight;
+	
+	std::vector<VkBuffer> objectBuffers;
+	std::vector<VkDeviceMemory> objectBuffersMemory;
 
 	VkBuffer vertexBuffer;
 	VkDeviceMemory vertexBufferMemory;
+	VkDescriptorSetLayout descriptorSetLayout;
 
 	size_t currentFrame = 0;
 };
@@ -126,14 +140,18 @@ private:
 	bool CreateSwapchain();
 	bool GetQueues();
 	bool CreateRenderPass();
+	bool CreateDescriptorSetLayout();
 	bool CreateGraphicsPipeline();
 	bool CreateFramebuffers();
 	bool CreateCommandPool();
 	bool CreateVertexBuffer(const Resource::Mesh &m);
+	bool CreateObjectBuffer(const u32 objectCount);
 	bool CreateCommandBuffers();
 	bool CreateSyncObjects();
 	bool RecreateSwapchain();
 	u32 FindMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties);
+	bool CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
+	bool CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 	bool DrawFrame();
 	void Cleanup();
 	void SendErrorPopup(const std::wstring &err);

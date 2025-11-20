@@ -6,8 +6,6 @@
 
 using namespace Maths;
 
-const u32 MAX_FRAMES_IN_FLIGHT = 2;
-
 const u8 MOVEMENT_KEYS[6] =
 {
 	'A', 'E', 'W', 'D', 'Q', 'S'
@@ -188,6 +186,7 @@ bool RenderThread::InitVulkan()
 			CreateFramebuffers() &&
 			CreateCommandPool() &&
 			CreateVertexBuffer(sceneData.mesh) &&
+			CreateObjectBuffer(OBJECT_COUNT) &&
 			CreateCommandBuffers() &&
 			CreateSyncObjects();
 }
@@ -499,6 +498,35 @@ std::array<VkVertexInputAttributeDescription, 3> RenderThread::GetAttributeDescr
 	return attributeDescriptions;
 }
 
+bool RenderThread::CreateDescriptorSetLayout()
+{
+	VkDescriptorSetLayoutBinding uboLayoutBinding = {};
+    uboLayoutBinding.binding = 0;
+    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uboLayoutBinding.descriptorCount = 1;
+	uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	uboLayoutBinding.pImmutableSamplers = nullptr;
+
+	VkDescriptorSetLayoutBinding objectLayoutBinding = {};
+    uboLayoutBinding.binding = 1;
+    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    uboLayoutBinding.descriptorCount = 1;
+	uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	uboLayoutBinding.pImmutableSamplers = nullptr;
+
+	VkDescriptorSetLayoutCreateInfo layoutInfo = {};
+	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layoutInfo.bindingCount = 2;
+	VkDescriptorSetLayoutBinding bindings[2] = { uboLayoutBinding, objectLayoutBinding };
+	layoutInfo.pBindings = bindings;
+	
+	if ( vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
+	    throw std::runtime_error("failed to create descriptor set layout!");
+	}
+
+	return false;
+}
+
 bool RenderThread::CreateGraphicsPipeline()
 {
 	const std::filesystem::path defaultPath = std::filesystem::current_path();
@@ -637,6 +665,23 @@ bool RenderThread::CreateGraphicsPipeline()
 	return true;
 }
 
+bool RenderThread::CreateObjectBuffer(const u32 objectCount)
+{
+	VkDeviceSize bufferSize = sizeof(Vec4) * objectCount;
+	renderData.objectBuffers.resize(renderData.swapchainImageViews.size());
+	renderData.objectBuffersMemory.resize(renderData.swapchainImageViews.size());
+	for (u32 i = 0; i < renderData.swapchainImageViews.size(); i++)
+	{
+		if (!CreateBuffer(	bufferSize,
+							VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+							VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+							renderData.objectBuffers[i],
+							renderData.objectBuffersMemory[i]))
+			return false;
+	}
+	return true;
+}
+
 bool RenderThread::CreateFramebuffers()
 {
 	renderData.swapchainImages = appData.swapchain.get_images().value();
@@ -665,11 +710,21 @@ bool RenderThread::CreateFramebuffers()
 
 bool RenderThread::CreateCommandPool()
 {
-	VkCommandPoolCreateInfo poolInfo = {};
-	poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-	poolInfo.queueFamilyIndex = appData.device.get_queue_index(vkb::QueueType::graphics).value();
+	VkCommandPoolCreateInfo poolInfo0 = {};
+	poolInfo0.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	poolInfo0.queueFamilyIndex = appData.device.get_queue_index(vkb::QueueType::graphics).value();
 
-	if (appData.disp.createCommandPool(&poolInfo, nullptr, &renderData.commandPool) != VK_SUCCESS)
+	if (appData.disp.createCommandPool(&poolInfo0, nullptr, &renderData.commandPool) != VK_SUCCESS)
+	{
+		SendErrorPopup("failed to create command pool");
+		return false;
+	}
+
+	VkCommandPoolCreateInfo poolInfo1 = {};
+	poolInfo1.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	poolInfo1.queueFamilyIndex = appData.device.get_queue_index(vkb::QueueType::transfer).value();
+
+	if (appData.disp.createCommandPool(&poolInfo1, nullptr, &renderData.transfertCommandPool) != VK_SUCCESS)
 	{
 		SendErrorPopup("failed to create command pool");
 		return false;
@@ -681,41 +736,67 @@ bool RenderThread::CreateVertexBuffer(const Resource::Mesh &m)
 {
 	const auto &vertices = m.GetVertices();
 
-	VkBufferCreateInfo bufferInfo = {};
-	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	bufferInfo.size = sizeof(vertices[0]) * vertices.size();
-	bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-	bufferInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
-	bufferInfo.queueFamilyIndexCount = 2;
-	u32 queueFamilies[2] = {appData.device.get_queue_index(vkb::QueueType::graphics).value(), appData.device.get_queue_index(vkb::QueueType::transfer).value()};
-	bufferInfo.pQueueFamilyIndices = queueFamilies;
+	VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
 
-	if (VkResult r = appData.disp.createBuffer(&bufferInfo, nullptr, &renderData.vertexBuffer); r != VK_SUCCESS)
-	{
-		SendErrorPopup("failed to create vertex buffer!");
-		return false;
-	}
-
-	VkMemoryRequirements memRequirements;
-	appData.disp.getBufferMemoryRequirements(renderData.vertexBuffer, &memRequirements);
-
-	VkMemoryAllocateInfo allocInfo{};
-	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	allocInfo.allocationSize = memRequirements.size;
-	allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-	
-	if (appData.disp.allocateMemory(&allocInfo, nullptr, &renderData.vertexBufferMemory) != VK_SUCCESS)
-	{
-		SendErrorPopup("failed to allocate vertex buffer memory!");
-		return false;
-	}
-
-	appData.disp.bindBufferMemory(renderData.vertexBuffer, renderData.vertexBufferMemory, 0);
+    VkBuffer stagingBuffer;
+    VkDeviceMemory stagingBufferMemory;
+    CreateBuffer(	bufferSize,
+					VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+					VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+					stagingBuffer,
+					stagingBufferMemory);
 
 	void *data;
-	appData.disp.mapMemory(renderData.vertexBufferMemory, 0, bufferInfo.size, 0, &data);
-	std::memcpy(data, vertices.data(), bufferInfo.size);
-	appData.disp.unmapMemory(renderData.vertexBufferMemory);
+	appData.disp.mapMemory(stagingBufferMemory, 0, bufferSize, 0, &data);
+	std::memcpy(data, vertices.data(), bufferSize);
+	appData.disp.unmapMemory(stagingBufferMemory);
+
+    CreateBuffer(	bufferSize,
+					VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+					VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+					renderData.vertexBuffer,
+					renderData.vertexBufferMemory);
+	
+	CopyBuffer(stagingBuffer, renderData.vertexBuffer, bufferSize);
+
+	appData.disp.destroyBuffer(stagingBuffer, nullptr);
+    appData.disp.freeMemory(stagingBufferMemory, nullptr);
+	
+	return true;
+}
+
+bool RenderThread::CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)
+{
+	VkCommandBufferAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandPool = renderData.transfertCommandPool;
+    allocInfo.commandBufferCount = 1;
+
+    VkCommandBuffer commandBuffer;
+	appData.disp.allocateCommandBuffers(&allocInfo, &commandBuffer);
+    
+	VkCommandBufferBeginInfo beginInfo = {};
+	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	appData.disp.beginCommandBuffer(commandBuffer, &beginInfo);
+	
+	VkBufferCopy copyRegion{};
+	copyRegion.srcOffset = 0; // Optional
+	copyRegion.dstOffset = 0; // Optional
+	copyRegion.size = size;
+	appData.disp.cmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
+
+	appData.disp.endCommandBuffer(commandBuffer);
+
+	VkSubmitInfo submitInfo = {};
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &commandBuffer;
+
+	appData.disp.queueSubmit(renderData.transferQueue, 1, &submitInfo, VK_NULL_HANDLE);
+	appData.disp.queueWaitIdle(renderData.transferQueue);
+	appData.disp.freeCommandBuffers(renderData.transfertCommandPool, 1, &commandBuffer);
 
 	return true;
 }
@@ -805,6 +886,41 @@ bool RenderThread::CreateCommandBuffers()
 	return true;
 }
 
+bool RenderThread::CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory)
+{
+    VkBufferCreateInfo bufferInfo = {};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = size;
+    bufferInfo.usage = usage;
+    bufferInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
+	bufferInfo.queueFamilyIndexCount = 2;
+	u32 queueFamilies[2] = {appData.device.get_queue_index(vkb::QueueType::graphics).value(), appData.device.get_queue_index(vkb::QueueType::transfer).value()};
+	bufferInfo.pQueueFamilyIndices = queueFamilies;
+
+    if (appData.disp.createBuffer(&bufferInfo, nullptr, &buffer) != VK_SUCCESS)
+	{
+        SendErrorPopup("failed to create buffer!");
+		return false;
+    }
+
+    VkMemoryRequirements memRequirements;
+	appData.disp.getBufferMemoryRequirements(buffer, &memRequirements);
+
+    VkMemoryAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, properties);
+
+	if (appData.disp.allocateMemory(&allocInfo, nullptr, &bufferMemory) != VK_SUCCESS)
+	{
+		SendErrorPopup("failed to allocate buffer memory!");
+		return false;
+	}
+
+	appData.disp.bindBufferMemory(buffer, bufferMemory, 0);
+	return true;
+}
+
 bool RenderThread::CreateSyncObjects()
 {
 	renderData.availableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
@@ -851,6 +967,7 @@ bool RenderThread::RecreateSwapchain()
 	if (renderData.commandPool != VK_NULL_HANDLE)
 	{
 		appData.disp.destroyCommandPool(renderData.commandPool, nullptr);
+		appData.disp.destroyCommandPool(renderData.transfertCommandPool, nullptr);
 		renderData.commandPool = VK_NULL_HANDLE;
 
 		for (u32 i = 0; i < renderData.framebuffers.size(); i++)
@@ -984,10 +1101,17 @@ void RenderThread::Cleanup()
 	}
 
 	appData.disp.destroyCommandPool(renderData.commandPool, nullptr);
+	appData.disp.destroyCommandPool(renderData.transfertCommandPool, nullptr);
 
 	for (u32 i = 0; i < renderData.framebuffers.size(); i++)
 	{
 		appData.disp.destroyFramebuffer(renderData.framebuffers[i], nullptr);
+	}
+
+	for (u32 i = 0; i < renderData.objectBuffers.size(); i++)
+	{
+		appData.disp.destroyBuffer(renderData.objectBuffers[i], nullptr);
+		appData.disp.freeMemory(renderData.objectBuffersMemory[i], nullptr);
 	}
 
 	appData.disp.destroyPipeline(renderData.graphicsPipeline, nullptr);
