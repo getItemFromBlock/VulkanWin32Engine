@@ -3,6 +3,7 @@
 
 #include "Maths/Maths.hpp"
 #include "RenderThread.hpp"
+#include "GameThread.hpp"
 
 #ifdef _DEBUG
 #include <crtdbg.h>
@@ -13,7 +14,8 @@ WCHAR szTitle[] = L"Vulkan Demo";
 HCURSOR cursorHide;
 bool captured = false;
 bool fullscreen = false;
-RenderThread th;
+RenderThread rh;
+GameThread gh;
 
 struct SavedInfos
 {
@@ -27,6 +29,30 @@ struct SavedInfos
 LRESULT CALLBACK WndProc(_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM wParam, _In_ LPARAM lParam);
 void OnMoveMouse(HWND hwnd, bool reset = false);
 void ToggleFullscreen(HWND hwnd, bool full);
+
+std::string GetLastErrorAsString()
+{
+    //Get the error message ID, if any.
+    DWORD errorMessageID = ::GetLastError();
+    if(errorMessageID == 0) {
+        return std::string(); //No error message has been recorded
+    }
+    
+    LPSTR messageBuffer = nullptr;
+
+    //Ask Win32 to give us the string version of that message ID.
+    //The parameters we pass in, tell Win32 to create the buffer that holds the message for us (because we don't yet know how long the message string will be).
+    size_t size = FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                                 NULL, errorMessageID, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&messageBuffer, 0, NULL);
+    
+    //Copy the error message into a std::string.
+    std::string message(messageBuffer, size);
+    
+    //Free the Win32's string's buffer.
+    LocalFree(messageBuffer);
+            
+    return message;
+}
 
 int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR pCmdLine, _In_ int nCmdShow)
 {
@@ -65,8 +91,16 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 
 		ShowWindow(hWnd, nCmdShow);
 		UpdateWindow(hWnd);
-
-		th.Init(hWnd, hInstance, Maths::IVec2(800, 600));
+		BLENDFUNCTION blend = {};
+		blend.BlendOp = AC_SRC_OVER;
+		blend.BlendFlags = 0;
+		blend.SourceConstantAlpha = 255;
+		blend.AlphaFormat = AC_SRC_ALPHA;
+		BOOL res = UpdateLayeredWindow(hWnd, NULL, NULL, NULL, NULL, NULL, 0, &blend, ULW_ALPHA);
+		auto t = GetLastError();
+		auto text = GetLastErrorAsString();
+		gh.Init(hWnd, Maths::IVec2(800, 600));
+		rh.Init(hWnd, hInstance, Maths::IVec2(800, 600));
 		LONG_PTR lExStyle = GetWindowLongPtr(hWnd, GWL_EXSTYLE);
 		lExStyle &= ~(WS_EX_DLGMODALFRAME | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE);
 		SetWindowLongPtr(hWnd, GWL_EXSTYLE, lExStyle);
@@ -79,12 +113,13 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 
 		// Main message loop:
 		MSG msg;
-		while (GetMessageW(&msg, NULL, 0, 0) && !th.HasCrashed())
+		while (GetMessageW(&msg, NULL, 0, 0) && !rh.HasCrashed())
 		{
 			TranslateMessage(&msg);
 			DispatchMessageW(&msg);
 		}
-		th.Quit();
+		gh.Quit();
+		rh.Quit();
 		return (int)msg.wParam;
 	}
 }
@@ -97,17 +132,20 @@ LRESULT CALLBACK WndProc(_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM wParam, 
 	{
 		RECT r;
 		GetClientRect(hWnd, &r);
-		th.Resize(r.right - r.left, r.bottom - r.top);
+		gh.Resize(r.right - r.left, r.bottom - r.top);
+		rh.Resize(r.right - r.left, r.bottom - r.top);
 		break;
 	}
 	case WM_CLEAR:
 		break;
 	case WM_DESTROY:
-		th.Quit();
+		gh.Quit();
+		rh.Quit();
 		PostQuitMessage(0);
 		break;
 	case WM_SIZE:
-		th.Resize(LOWORD(lParam), HIWORD(lParam));
+		gh.Resize(LOWORD(lParam), HIWORD(lParam));
+		rh.Resize(LOWORD(lParam), HIWORD(lParam));
 		break;
 	case WM_GETMINMAXINFO:
 	{
@@ -128,7 +166,7 @@ LRESULT CALLBACK WndProc(_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM wParam, 
 		if (isExtendedKey)
 			scanCode = MAKEWORD(scanCode, 0xE0);
 
-		th.SetKeyState((u8)(wParam), isKeyDown);
+		gh.SetKeyState((u8)(wParam), isKeyDown);
 		if (isKeyDown)
 		{
 			if (wParam == VK_F11)
@@ -191,7 +229,7 @@ void OnMoveMouse(HWND hwnd, bool reset)
 	if (mPos.x != tempX || mPos.y != tempY) {
 		int rPosX = mPos.x - tempX;
 		int rPosY = mPos.y - tempY;
-		if (!reset) th.MoveMouse(Maths::Vec2(static_cast<f32>(rPosX), static_cast<f32>(rPosY)));
+		if (!reset) gh.MoveMouse(Maths::Vec2(static_cast<f32>(rPosX), static_cast<f32>(rPosY)));
 		SetCursorPos(tempX, tempY);
 	}
 }

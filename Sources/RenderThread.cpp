@@ -6,22 +6,6 @@
 
 using namespace Maths;
 
-const u8 MOVEMENT_KEYS[6] =
-{
-	'A', 'E', 'W', 'D', 'Q', 'S'
-};
-
-std::string GetFormattedTime()
-{
-	time_t timeObj;
-	time(&timeObj);
-	tm pTime = {};
-	gmtime_s(&pTime, &timeObj);
-	char buffer[256];
-	sprintf_s(buffer, 255, "%d-%d-%d_%d-%d-%d", pTime.tm_year+1900, pTime.tm_mon+1, pTime.tm_mday, pTime.tm_hour, pTime.tm_min, pTime.tm_sec);
-	return std::string(buffer);
-}
-
 std::string LoadFile(const std::string &path)
 {
 	std::ifstream file = std::ifstream(path, std::ios_base::binary | std::ios_base::ate);
@@ -72,22 +56,6 @@ void RenderThread::Quit()
 		thread.join();
 }
 
-void RenderThread::MoveMouse(Vec2 delta)
-{
-	mouseLock.lock();
-	storedDelta -= delta;
-	mouseLock.unlock();
-}
-
-void RenderThread::SetKeyState(u8 key, bool state)
-{
-	keyLock.lock();
-	keyDown.set(key, state);
-	if (state)
-		keyToggle.flip(key);
-	keyLock.unlock();
-}
-
 void RenderThread::HandleResize()
 {
 	res.x = (s32)(storedRes & 0xffffffff);
@@ -101,6 +69,11 @@ void RenderThread::InitThread()
 	SetThreadDescription(GetCurrentThread(), L"Render Thread");
 	std::chrono::time_point<std::chrono::system_clock> now = std::chrono::system_clock::now();
 	start = now.time_since_epoch();
+}
+
+void GameThread::Update()
+{
+
 }
 
 void RenderThread::ThreadFunc()
@@ -128,55 +101,15 @@ void RenderThread::ThreadFunc()
 		if (tm0 != tm1)
 		{
 			tm0 = tm1;
-			LogMessage("FPS: " + std::to_string(counter) + "\n");
+			GameThread::LogMessage("FPS: " + std::to_string(counter) + "\n");
 			counter = 0;
 		}
 		counter++;
-
-		mouseLock.lock();
-		Vec2 delta = storedDelta;
-		storedDelta = Vec2();
-		mouseLock.unlock();
-		delta *= 0.005f;
-		rotation.x = Util::Clamp(rotation.x - delta.y, static_cast<f32>(-M_PI_2), static_cast<f32>(M_PI_2));
-		rotation.y = Util::Mod(rotation.y + delta.x, static_cast<f32>(2 * M_PI));
-		Maths::Vec3 dir;
-		keyLock.lock();
-		for (u8 i = 0; i < 6; ++i)
-		{
-			f32 key = keyDown.test(MOVEMENT_KEYS[i]);
-			dir[i % 3] += (i > 2) ? -key : key;
-		}
-		f32 fovDir = static_cast<f32>(keyDown.test(VK_UP)) - static_cast<f32>(keyDown.test(VK_DOWN));
-		LaunchParams params = keyPress.test(VK_F3) ? BOXDEBUG : (keyPress.test(VK_F4) ? ADVANCED : NONE);
-		bool screenshot = keyPress.test(VK_F2);
-		keyPress.reset();
-		keyLock.unlock();
-		fov = Util::Clamp(fov + fovDir * deltaTime * fov, 0.5f, 100.0f);
-		Quat q = Quat::FromEuler(Vec3(rotation.x, rotation.y, 0.0f));
-		if (dir.Dot())
-		{
-			dir = dir.Normalize() * deltaTime * 10;
-			position += q * dir;
-		}
-		if ((params & ADVANCED) && (delta.Dot() || dir.Dot() || fovDir))
-			params = (LaunchParams)(params | CLEAR);
 		
 		HandleResize();
 
 		if (!DrawFrame())
 			break;
-		
-		if (screenshot)
-		{
-			if (!std::filesystem::exists("Screenshots"))
-			{
-				std::filesystem::create_directory("Screenshots");
-			}
-			std::string name = "Screenshots/";
-			name += GetFormattedTime();
-			//CudaUtil::SaveFrameBuffer(kernels.GetMainFrameBuffer(), name);
-		}
 	}
 
 	appData.disp.deviceWaitIdle();
@@ -245,38 +178,6 @@ void RenderThread::UnloadAssets()
 	*/
 }
 
-void RenderThread::SendErrorPopup(const std::string &err)
-{
-	LogMessage(err);
-#ifdef NDEBUG
-	MessageBoxA(appData.hWnd, err.c_str(), "Error!", MB_YESNO);
-#else
-	if (MessageBoxA(appData.hWnd, (err + "\nBreak?").c_str(), "Error!", MB_YESNO) == IDYES)
-		DebugBreak();
-#endif
-}
-
-void RenderThread::SendErrorPopup(const std::wstring &err)
-{
-	LogMessage(err);
-#ifdef NDEBUG
-	MessageBoxW(appData.hWnd, err.c_str(), L"Error!", MB_YESNO);
-#else
-	if (MessageBoxW(appData.hWnd, (err + L"\nBreak?").c_str(), L"Error!", MB_YESNO) == IDYES)
-		DebugBreak();
-#endif
-}
-
-void RenderThread::LogMessage(const std::string &msg)
-{
-	OutputDebugStringA(msg.c_str());
-}
-
-void RenderThread::LogMessage(const std::wstring &msg)
-{
-	OutputDebugStringW(msg.c_str());
-}
-
 VkSurfaceKHR RenderThread::CreateSurfaceWin32(VkInstance instance, HINSTANCE hInstance, HWND window, VkAllocationCallbacks* allocator)
 {
 	VkSurfaceKHR surface = VK_NULL_HANDLE;
@@ -300,7 +201,7 @@ VkSurfaceKHR RenderThread::CreateSurfaceWin32(VkInstance instance, HINSTANCE hIn
 				text += L"Unknown error";
 			else
 				text += s;
-			SendErrorPopup(text);
+			GameThread::SendErrorPopup(text);
 		}
 		surface = VK_NULL_HANDLE;
 	}
@@ -311,7 +212,7 @@ bool RenderThread::InitDevice()
 {
 	vkb::InstanceBuilder instanceBuilder;
 	instanceBuilder.set_app_name("Vulkan Demo").set_app_version(VK_MAKE_VERSION(1, 0, 0));
-	instanceBuilder.set_engine_name("Ligma Engine").request_validation_layers();
+	instanceBuilder.set_engine_name("Ligma Engine").enable_extension("VK_KHR_surface").request_validation_layers();
 
 	instanceBuilder.set_debug_callback([](VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
 		VkDebugUtilsMessageTypeFlagsEXT messageType,
@@ -332,7 +233,7 @@ bool RenderThread::InitDevice()
 
 	if (!instanceRet)
 	{
-		SendErrorPopup(instanceRet.error().message());
+		GameThread::SendErrorPopup(instanceRet.error().message());
 		return false;
 	}
 	appData.instance = instanceRet.value();
@@ -355,7 +256,7 @@ bool RenderThread::InitDevice()
 					err += detailedReasons[i] + '\n';
 			}
 		}
-		SendErrorPopup(err);
+		GameThread::SendErrorPopup(err);
 		return false;
 	}
 	vkb::PhysicalDevice physicalDevice = physDeviceRet.value();
@@ -364,19 +265,29 @@ bool RenderThread::InitDevice()
 	auto deviceRet = deviceBuilder.build();
 	if (!deviceRet)
 	{
-		SendErrorPopup(deviceRet.error().message());
+		GameThread::SendErrorPopup(deviceRet.error().message());
 		return false;
 	}
 	appData.device = deviceRet.value();
 	appData.disp = appData.device.make_table();
+
+	VkSurfaceCapabilitiesKHR surfaceCaps = {};
+	vkGetPhysicalDeviceSurfaceCapabilitiesKHR(appData.device.physical_device, appData.surface, &surfaceCaps);
 
 	return true;
 }
 
 bool RenderThread::CreateSwapchain()
 {
-	vkb::SwapchainBuilder swapchainBuilder{ appData.device };
+	vkb::SwapchainBuilder swapchainBuilder = vkb::SwapchainBuilder(appData.device.physical_device, appData.device, appData.surface);
 	u32 x, y;
+	VkSurfaceFormatKHR format = {};
+	format.colorSpace = VkColorSpaceKHR::VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+	format.format = VK_FORMAT_B8G8R8A8_UNORM;
+	swapchainBuilder.set_desired_format(format);
+	swapchainBuilder.set_composite_alpha_flags(VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR);
+	VkSurfaceCapabilitiesKHR surfaceCaps = {};
+	vkGetPhysicalDeviceSurfaceCapabilitiesKHR(appData.device.physical_device, appData.surface, &surfaceCaps);
 	auto swapRet = swapchainBuilder.set_old_swapchain(appData.swapchain).build(x, y);
 	swapRes.x = x;
 	swapRes.y = y;
@@ -388,7 +299,7 @@ bool RenderThread::CreateSwapchain()
 	}
 	if (!swapRet)
 	{
-		SendErrorPopup(swapRet.error().message() + ' ' + std::to_string(swapRet.vk_result()));
+		GameThread::SendErrorPopup(swapRet.error().message() + ' ' + std::to_string(swapRet.vk_result()));
 		return false;
 	}
 	vkb::destroy_swapchain(appData.swapchain);
@@ -401,7 +312,7 @@ bool RenderThread::GetQueues()
 	auto gq = appData.device.get_queue(vkb::QueueType::graphics);
 	if (!gq.has_value())
 	{
-		SendErrorPopup("failed to get graphics queue: " + gq.error().message());
+		GameThread::SendErrorPopup("failed to get graphics queue: " + gq.error().message());
 		return false;
 	}
 	renderData.graphicsQueue = gq.value();
@@ -409,7 +320,7 @@ bool RenderThread::GetQueues()
 	auto pq = appData.device.get_queue(vkb::QueueType::present);
 	if (!pq.has_value())
 	{
-		SendErrorPopup("failed to get present queue: " + pq.error().message());
+		GameThread::SendErrorPopup("failed to get present queue: " + pq.error().message());
 		return false;
 	}
 	renderData.presentQueue = pq.value();
@@ -462,7 +373,7 @@ bool RenderThread::CreateRenderPass()
 
 	if (appData.disp.createRenderPass(&renderPassInfo, nullptr, &renderData.renderPass) != VK_SUCCESS)
 	{
-		SendErrorPopup("failed to create render pass");
+		GameThread::SendErrorPopup("failed to create render pass");
 		return false;
 	}
 	return true;
@@ -538,7 +449,7 @@ bool RenderThread::CreateDescriptorSetLayout()
 	
 	if (appData.disp.createDescriptorSetLayout(&layoutInfo, nullptr, &renderData.descriptorSetLayout) != VK_SUCCESS)
 	{
-		SendErrorPopup("failed to create descriptor set layout");
+		GameThread::SendErrorPopup("failed to create descriptor set layout");
 		return false;
 	}
 
@@ -555,7 +466,7 @@ bool RenderThread::CreateGraphicsPipeline()
 	VkShaderModule fragModule = CreateShaderModule(fragCode);
 	if (vertModule == VK_NULL_HANDLE || fragModule == VK_NULL_HANDLE)
 	{
-		SendErrorPopup("failed to create shader module");
+		GameThread::SendErrorPopup("failed to create shader module");
 		return false;
 	}
 
@@ -646,7 +557,7 @@ bool RenderThread::CreateGraphicsPipeline()
 
 	if (appData.disp.createPipelineLayout(&pipelineLayoutInfo, nullptr, &renderData.pipelineLayout) != VK_SUCCESS)
 	{
-		SendErrorPopup("failed to create pipeline layout");
+		GameThread::SendErrorPopup("failed to create pipeline layout");
 		return false;
 	}
 
@@ -675,7 +586,7 @@ bool RenderThread::CreateGraphicsPipeline()
 
 	if (appData.disp.createGraphicsPipelines(VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &renderData.graphicsPipeline) != VK_SUCCESS)
 	{
-		SendErrorPopup("failed to create pipline");
+		GameThread::SendErrorPopup("failed to create pipline");
 		return false;
 	}
 
@@ -743,7 +654,7 @@ bool RenderThread::CreateCommandPool()
 
 	if (appData.disp.createCommandPool(&poolInfo0, nullptr, &renderData.commandPool) != VK_SUCCESS)
 	{
-		SendErrorPopup("failed to create command pool");
+		GameThread::SendErrorPopup("failed to create command pool");
 		return false;
 	}
 
@@ -753,7 +664,7 @@ bool RenderThread::CreateCommandPool()
 
 	if (appData.disp.createCommandPool(&poolInfo1, nullptr, &renderData.transfertCommandPool) != VK_SUCCESS)
 	{
-		SendErrorPopup("failed to create command pool");
+		GameThread::SendErrorPopup("failed to create command pool");
 		return false;
 	}
 	return true;
@@ -840,7 +751,7 @@ bool RenderThread::CreateCommandBuffers()
 
 	if (appData.disp.allocateCommandBuffers(&allocInfo, renderData.commandBuffers.data()) != VK_SUCCESS)
 	{
-		SendErrorPopup("failed to allocate command buffers");
+		GameThread::SendErrorPopup("failed to allocate command buffers");
 		return false;
 	}
 
@@ -852,7 +763,7 @@ bool RenderThread::CreateCommandBuffers()
 
 	if (appData.disp.allocateCommandBuffers(&allocInfoTr, &renderData.transferCommandBuffer) != VK_SUCCESS)
 	{
-		SendErrorPopup("failed to allocate transfer command buffer");
+		GameThread::SendErrorPopup("failed to allocate transfer command buffer");
 		return false;
 	}
 
@@ -863,7 +774,7 @@ bool RenderThread::CreateCommandBuffers()
 
 		if (appData.disp.beginCommandBuffer(renderData.commandBuffers[i], &beginInfo) != VK_SUCCESS)
 		{
-			SendErrorPopup("failed to begin recording command buffer");
+			GameThread::SendErrorPopup("failed to begin recording command buffer");
 			return false;
 		}
 
@@ -873,7 +784,7 @@ bool RenderThread::CreateCommandBuffers()
 		renderPassInfo.framebuffer = renderData.framebuffers[i];
 		renderPassInfo.renderArea.offset = { 0, 0 };
 		renderPassInfo.renderArea.extent = appData.swapchain.extent;
-		VkClearValue clearColor{ { { 0.0f, 0.0f, 0.0f, 1.0f } } };
+		VkClearValue clearColor{ { { 0.0f, 0.0f, 0.0f, 0.0f } } };
 		renderPassInfo.clearValueCount = 1;
 		renderPassInfo.pClearValues = &clearColor;
 
@@ -908,7 +819,7 @@ bool RenderThread::CreateCommandBuffers()
 
 		if (appData.disp.endCommandBuffer(renderData.commandBuffers[i]) != VK_SUCCESS)
 		{
-			SendErrorPopup("failed to record command buffer");
+			GameThread::SendErrorPopup("failed to record command buffer");
 			return false;
 		}
 	}
@@ -928,7 +839,7 @@ bool RenderThread::CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkM
 
     if (appData.disp.createBuffer(&bufferInfo, nullptr, &buffer) != VK_SUCCESS)
 	{
-        SendErrorPopup("failed to create buffer!");
+        GameThread::SendErrorPopup("failed to create buffer!");
 		return false;
     }
 
@@ -942,7 +853,7 @@ bool RenderThread::CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkM
 
 	if (appData.disp.allocateMemory(&allocInfo, nullptr, &bufferMemory) != VK_SUCCESS)
 	{
-		SendErrorPopup("failed to allocate buffer memory!");
+		GameThread::SendErrorPopup("failed to allocate buffer memory!");
 		return false;
 	}
 
@@ -968,7 +879,7 @@ bool RenderThread::CreateSyncObjects()
 	{
 		if (appData.disp.createSemaphore(&semaphoreInfo, nullptr, &renderData.finishedSemaphore[i]) != VK_SUCCESS)
 		{
-			SendErrorPopup("failed to create sync objects");
+			GameThread::SendErrorPopup("failed to create sync objects");
 			return false;
 		}
 	}
@@ -978,7 +889,7 @@ bool RenderThread::CreateSyncObjects()
 		if (appData.disp.createSemaphore(&semaphoreInfo, nullptr, &renderData.availableSemaphores[i]) != VK_SUCCESS ||
 			appData.disp.createFence(&fenceInfo, nullptr, &renderData.inFlightFences[i]) != VK_SUCCESS)
 		{
-			SendErrorPopup("failed to create sync objects");
+			GameThread::SendErrorPopup("failed to create sync objects");
 			return false;
 		}
 	}
@@ -1004,7 +915,7 @@ bool RenderThread::CreateDescriptorPool()
 	
 	if (appData.disp.createDescriptorPool(&poolInfo, nullptr, &renderData.descriptorPool) != VK_SUCCESS)
 	{
-	    SendErrorPopup("failed to create descriptor pool");
+	    GameThread::SendErrorPopup("failed to create descriptor pool");
 		return false;
 	}
 
@@ -1023,7 +934,7 @@ bool RenderThread::CreateDescriptorSets()
 	renderData.descriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
 	if (appData.disp.allocateDescriptorSets(&allocInfo, renderData.descriptorSets.data()) != VK_SUCCESS)
 	{
-		SendErrorPopup("failed to allocate descriptor sets");
+		GameThread::SendErrorPopup("failed to allocate descriptor sets");
 		return false;
 	}
 
@@ -1128,7 +1039,7 @@ u32 RenderThread::FindMemoryType(u32 typeFilter, VkMemoryPropertyFlags propertie
 			return i;
 	}
 
-	SendErrorPopup("failed to find suitable memory type!");
+	GameThread::SendErrorPopup("failed to find suitable memory type!");
 	return -1;
 }
 
@@ -1158,7 +1069,7 @@ bool RenderThread::DrawFrame()
 	}
 	else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
 	{
-		SendErrorPopup("failed to acquire swapchain image. Error " + result);
+		GameThread::SendErrorPopup("failed to acquire swapchain image. Error " + result);
 		return false;
 	}
 
@@ -1190,7 +1101,7 @@ bool RenderThread::DrawFrame()
 
 	if (appData.disp.queueSubmit(renderData.graphicsQueue, 1, &submitInfo, renderData.inFlightFences[renderData.currentFrame]) != VK_SUCCESS)
 	{
-		SendErrorPopup("failed to submit draw command buffer");
+		GameThread::SendErrorPopup("failed to submit draw command buffer");
 		return false;
 	}
 
@@ -1213,7 +1124,7 @@ bool RenderThread::DrawFrame()
 	}
 	else if (result != VK_SUCCESS)
 	{
-		SendErrorPopup("failed to present swapchain image");
+		GameThread::SendErrorPopup("failed to present swapchain image");
 		return false;
 	}
 

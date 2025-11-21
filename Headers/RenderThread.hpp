@@ -22,16 +22,6 @@
 
 const u32 MAX_FRAMES_IN_FLIGHT = 2;
 
-enum LaunchParams : u8
-{
-	NONE =			0x0,
-	ADVANCED =		0x1,
-	INVERTED_RB =	0x2,
-	BOXDEBUG =		0x4,
-	DENOISE =		0x8,
-	CLEAR =			0x10,
-};
-
 struct UBO
 {
 	Maths::Vec2 invRes;
@@ -95,29 +85,21 @@ struct SceneData
 class RenderThread
 {
 public:
-	RenderThread() {};
-	~RenderThread() {};
+	RenderThread() = default;
+	~RenderThread() = default;
 
 	void Init(HWND hwnd, HINSTANCE hInstance, Maths::IVec2 res);
 	void Resize(s32 x, s32 y);
 	bool HasFinished() const;
 	bool HasCrashed() const;
 	void Quit();
-	void MoveMouse(Maths::Vec2 delta);
-	void SetKeyState(u8 key, bool state);
 
 private:
 	std::thread thread;
 	std::chrono::system_clock::duration start = std::chrono::system_clock::duration();
 	std::atomic_bool exit;
 	std::atomic_bool crashed;
-	std::atomic_bool queueLock;
 	std::atomic_bool resized;
-	std::mutex mouseLock;
-	std::mutex keyLock;
-	std::bitset<256> keyDown = 0;
-	std::bitset<256> keyPress = 0;
-	std::bitset<256> keyToggle = 0;
 	AppData appData = {};
 	RenderData renderData = {};
 	SceneData sceneData = {};
@@ -163,8 +145,4 @@ private:
 	bool CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 	bool DrawFrame();
 	void Cleanup();
-	void SendErrorPopup(const std::wstring &err);
-	void SendErrorPopup(const std::string &err);
-	void LogMessage(const std::wstring &msg);
-	void LogMessage(const std::string &msg);
 };
