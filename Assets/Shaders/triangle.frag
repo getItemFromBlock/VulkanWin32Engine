@@ -7,7 +7,7 @@ layout (location = 0) out vec4 outColor;
 
 void main()
 {
-	outColor = vec4(fragColor*vec3(fragUV,1.0), 1.0);
+	//outColor = vec4(fragColor*vec3(fragUV,1.0), 1.0);
 	//outColor = vec4(vec3(fragUV,0.0), 1.0);
 	/*
 	vec3 c;
@@ -20,4 +20,6 @@ void main()
 		c = vec3(0.357, 0.808, 0.980);
 	outColor = vec4(pow(c, vec3(2.4)), 1.0);
 	*/
+	float fact = pow(1.0 - fragUV.y, 2.0);
+	outColor = vec4(vec3(1.0, fact, fact), 1.0);
 }

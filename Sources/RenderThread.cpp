@@ -92,6 +92,8 @@ void RenderThread::HandleResize()
 {
 	res.x = (s32)(storedRes & 0xffffffff);
 	res.y = (s32)(storedRes >> 32);
+	if (res.x != swapRes.x || res.y != swapRes.y)
+		resized = true;
 }
 
 void RenderThread::InitThread()
@@ -112,15 +114,24 @@ void RenderThread::ThreadFunc()
 		return;
 	}
 
-	f64 last = 0;
+	u32 counter = 0;
+	u32 tm0 = 0;
 	while (!exit)
 	{
 		std::chrono::time_point<std::chrono::system_clock> now = std::chrono::system_clock::now();
 		auto duration = now.time_since_epoch() - start;
 		auto micros = std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
 		f64 iTime = micros / 1000000.0;
-		f32 deltaTime = static_cast<f32>(iTime - last);
-		last = iTime;
+		f32 deltaTime = static_cast<f32>(iTime - appTime);
+		appTime = iTime;
+		u32 tm1 = (u32)(iTime);
+		if (tm0 != tm1)
+		{
+			tm0 = tm1;
+			LogMessage("FPS: " + std::to_string(counter) + "\n");
+			counter = 0;
+		}
+		counter++;
 
 		mouseLock.lock();
 		Vec2 delta = storedDelta;
@@ -182,11 +193,14 @@ bool RenderThread::InitVulkan()
 			CreateSwapchain() &&
 			GetQueues() &&
 			CreateRenderPass() &&
+			CreateDescriptorSetLayout() &&
 			CreateGraphicsPipeline() &&
 			CreateFramebuffers() &&
 			CreateCommandPool() &&
 			CreateVertexBuffer(sceneData.mesh) &&
 			CreateObjectBuffer(OBJECT_COUNT) &&
+			CreateDescriptorPool() &&
+			CreateDescriptorSets() &&
 			CreateCommandBuffers() &&
 			CreateSyncObjects();
 }
@@ -303,7 +317,7 @@ bool RenderThread::InitDevice()
 		VkDebugUtilsMessageTypeFlagsEXT messageType,
 		const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
 		void*) -> VkBool32 {
-			if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
+			if (messageSeverity & (VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT))
 			{
 				const char* severity = vkb::to_string_message_severity(messageSeverity);
 				const char* type = vkb::to_string_message_type(messageType);
@@ -364,6 +378,8 @@ bool RenderThread::CreateSwapchain()
 	vkb::SwapchainBuilder swapchainBuilder{ appData.device };
 	u32 x, y;
 	auto swapRet = swapchainBuilder.set_old_swapchain(appData.swapchain).build(x, y);
+	swapRes.x = x;
+	swapRes.y = y;
 	if (x == 0 || y == 0)
 	{
 		res.x = x;
@@ -508,11 +524,11 @@ bool RenderThread::CreateDescriptorSetLayout()
 	uboLayoutBinding.pImmutableSamplers = nullptr;
 
 	VkDescriptorSetLayoutBinding objectLayoutBinding = {};
-    uboLayoutBinding.binding = 1;
-    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    uboLayoutBinding.descriptorCount = 1;
-	uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-	uboLayoutBinding.pImmutableSamplers = nullptr;
+    objectLayoutBinding.binding = 1;
+    objectLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    objectLayoutBinding.descriptorCount = 1;
+	objectLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	objectLayoutBinding.pImmutableSamplers = nullptr;
 
 	VkDescriptorSetLayoutCreateInfo layoutInfo = {};
 	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -520,11 +536,13 @@ bool RenderThread::CreateDescriptorSetLayout()
 	VkDescriptorSetLayoutBinding bindings[2] = { uboLayoutBinding, objectLayoutBinding };
 	layoutInfo.pBindings = bindings;
 	
-	if ( vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
-	    throw std::runtime_error("failed to create descriptor set layout!");
+	if (appData.disp.createDescriptorSetLayout(&layoutInfo, nullptr, &renderData.descriptorSetLayout) != VK_SUCCESS)
+	{
+		SendErrorPopup("failed to create descriptor set layout");
+		return false;
 	}
 
-	return false;
+	return true;
 }
 
 bool RenderThread::CreateGraphicsPipeline()
@@ -622,7 +640,8 @@ bool RenderThread::CreateGraphicsPipeline()
 
 	VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
 	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipelineLayoutInfo.setLayoutCount = 0;
+	pipelineLayoutInfo.setLayoutCount = 1;
+	pipelineLayoutInfo.pSetLayouts = &renderData.descriptorSetLayout;
 	pipelineLayoutInfo.pushConstantRangeCount = 0;
 
 	if (appData.disp.createPipelineLayout(&pipelineLayoutInfo, nullptr, &renderData.pipelineLayout) != VK_SUCCESS)
@@ -667,19 +686,27 @@ bool RenderThread::CreateGraphicsPipeline()
 
 bool RenderThread::CreateObjectBuffer(const u32 objectCount)
 {
-	VkDeviceSize bufferSize = sizeof(Vec4) * objectCount;
+	VkDeviceSize bufferSize = sizeof(Vec4) * objectCount + sizeof(Vec4);
 	renderData.objectBuffers.resize(renderData.swapchainImageViews.size());
 	renderData.objectBuffersMemory.resize(renderData.swapchainImageViews.size());
+	renderData.objectBuffersMapped.resize(renderData.swapchainImageViews.size());
+
+	bool success = true;
 	for (u32 i = 0; i < renderData.swapchainImageViews.size(); i++)
 	{
-		if (!CreateBuffer(	bufferSize,
-							VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-							VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-							renderData.objectBuffers[i],
-							renderData.objectBuffersMemory[i]))
-			return false;
+		success &= CreateBuffer(bufferSize,
+								VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+								VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+								renderData.objectBuffers[i],
+								renderData.objectBuffersMemory[i]);
+	
+		success &= appData.disp.mapMemory(	renderData.objectBuffersMemory[i],
+											0,
+											bufferSize,
+											0,
+											reinterpret_cast<void**>(&renderData.objectBuffersMapped[i])) == VK_SUCCESS;
 	}
-	return true;
+	return success;
 }
 
 bool RenderThread::CreateFramebuffers()
@@ -873,7 +900,9 @@ bool RenderThread::CreateCommandBuffers()
 		VkDeviceSize offsets[] = { 0 };
 		appData.disp.cmdBindVertexBuffers(renderData.commandBuffers[i], 0, 1, vertexBuffers, offsets);
 
-		appData.disp.cmdDraw(renderData.commandBuffers[i], (u32)(sceneData.mesh.GetVertices().size()), 1, 0, 0);
+		appData.disp.cmdBindDescriptorSets(renderData.commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, renderData.pipelineLayout, 0, 1, &renderData.descriptorSets[renderData.currentFrame], 0, nullptr);
+
+		appData.disp.cmdDraw(renderData.commandBuffers[i], (u32)(sceneData.mesh.GetVertices().size()), OBJECT_COUNT, 0, 0);
 
 		appData.disp.cmdEndRenderPass(renderData.commandBuffers[i]);
 
@@ -956,6 +985,90 @@ bool RenderThread::CreateSyncObjects()
 	return true;
 }
 
+bool RenderThread::CreateDescriptorPool()
+{
+	VkDescriptorPoolSize poolSize0 = {};
+	poolSize0.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	poolSize0.descriptorCount = 256;
+	VkDescriptorPoolSize poolSize1 = {};
+	poolSize1.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	poolSize1.descriptorCount = 256;
+
+	VkDescriptorPoolSize pools[2] = {poolSize0, poolSize1};
+	VkDescriptorPoolCreateInfo poolInfo = {};
+	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	poolInfo.poolSizeCount = 2;
+	poolInfo.pPoolSizes = pools;
+	poolInfo.maxSets = 256;
+
+	
+	if (appData.disp.createDescriptorPool(&poolInfo, nullptr, &renderData.descriptorPool) != VK_SUCCESS)
+	{
+	    SendErrorPopup("failed to create descriptor pool");
+		return false;
+	}
+
+	return true;
+}
+
+bool RenderThread::CreateDescriptorSets()
+{
+	std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, renderData.descriptorSetLayout);
+	VkDescriptorSetAllocateInfo allocInfo = {};
+	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocInfo.descriptorPool = renderData.descriptorPool;
+	allocInfo.descriptorSetCount = MAX_FRAMES_IN_FLIGHT;
+	allocInfo.pSetLayouts = layouts.data();
+
+	renderData.descriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
+	if (appData.disp.allocateDescriptorSets(&allocInfo, renderData.descriptorSets.data()) != VK_SUCCESS)
+	{
+		SendErrorPopup("failed to allocate descriptor sets");
+		return false;
+	}
+
+	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+	{
+		VkDescriptorBufferInfo bufferInfo0 = {};
+		bufferInfo0.buffer = renderData.objectBuffers[i];
+		bufferInfo0.offset = 0;
+		bufferInfo0.range = sizeof(Vec4);
+
+		VkDescriptorBufferInfo bufferInfo1 = {};
+		bufferInfo1.buffer = renderData.objectBuffers[i];
+		bufferInfo1.offset = sizeof(Vec4);
+		bufferInfo1.range = sizeof(Vec4) * OBJECT_COUNT;
+
+		VkWriteDescriptorSet descriptorWrite0 = {};
+		descriptorWrite0.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptorWrite0.dstSet = renderData.descriptorSets[i];
+		descriptorWrite0.dstBinding = 0;
+		descriptorWrite0.dstArrayElement = 0;
+		descriptorWrite0.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		descriptorWrite0.descriptorCount = 1;
+		descriptorWrite0.pBufferInfo = &bufferInfo0;
+		descriptorWrite0.pImageInfo = nullptr; // Optional
+		descriptorWrite0.pTexelBufferView = nullptr; // Optional
+
+		VkWriteDescriptorSet descriptorWrite1 = {};
+		descriptorWrite1.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptorWrite1.dstSet = renderData.descriptorSets[i];
+		descriptorWrite1.dstBinding = 1;
+		descriptorWrite1.dstArrayElement = 0;
+		descriptorWrite1.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+		descriptorWrite1.descriptorCount = 1;
+		descriptorWrite1.pBufferInfo = &bufferInfo1;
+		descriptorWrite1.pImageInfo = nullptr; // Optional
+		descriptorWrite1.pTexelBufferView = nullptr; // Optional
+
+
+		VkWriteDescriptorSet descriptorArray[2] = {descriptorWrite0, descriptorWrite1};
+		appData.disp.updateDescriptorSets(2, descriptorArray, 0, nullptr);
+	}
+
+	return true;
+}
+
 bool RenderThread::RecreateSwapchain()
 {
 	HandleResize();
@@ -989,6 +1102,21 @@ bool RenderThread::RecreateSwapchain()
 	return true;
 }
 
+bool RenderThread::UpdateUniformBuffer(u32 image)
+{
+	Vec4 *dataPtr = renderData.objectBuffersMapped[image];
+	dataPtr[0] = Vec4(1.0f/res.x, 1.0f/res.y, 30, 30);
+	float tmMod = (float)(fmod(appTime, M_PI * 2));
+
+	for (u32 i = 0; i < OBJECT_COUNT; i++)
+	{
+		const s32 spacing = 20;
+		Vec2 pos = Vec2(10 + (i*spacing) % (res.x - 20), 10 + (i*spacing) / (res.x - 20) * spacing % (res.y - 20));
+		dataPtr[i+1] = Vec4(pos.x, pos.y, tmMod + fmodf(i * 3486.156132f, M_PI * 2), 0.0f);
+	}
+	return true;
+}
+
 u32 RenderThread::FindMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties)
 {
 	VkPhysicalDeviceMemoryProperties memProperties;
@@ -1010,7 +1138,10 @@ bool RenderThread::DrawFrame()
 	{
 		HandleResize();
 		if (res.x <= 0 || res.y <= 0)
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
 			return true;
+		}
 		else
 			return RecreateSwapchain();
 	}
@@ -1036,6 +1167,8 @@ bool RenderThread::DrawFrame()
 		appData.disp.waitForFences(1, &renderData.imageInFlight[imgIndex], VK_TRUE, UINT64_MAX);
 	}
 	renderData.imageInFlight[imgIndex] = renderData.inFlightFences[renderData.currentFrame];
+
+	UpdateUniformBuffer(renderData.currentFrame);
 
 	VkSubmitInfo submitInfo = {};
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -1118,6 +1251,8 @@ void RenderThread::Cleanup()
 	appData.disp.destroyPipelineLayout(renderData.pipelineLayout, nullptr);
 	appData.disp.destroyRenderPass(renderData.renderPass, nullptr);
 	appData.disp.destroyBuffer(renderData.vertexBuffer, nullptr);
+	appData.disp.destroyDescriptorPool(renderData.descriptorPool, nullptr);
+	appData.disp.destroyDescriptorSetLayout(renderData.descriptorSetLayout, nullptr);
 	appData.disp.freeMemory(renderData.vertexBufferMemory, nullptr);
 
 	appData.swapchain.destroy_image_views(renderData.swapchainImageViews);

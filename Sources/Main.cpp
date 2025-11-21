@@ -94,7 +94,12 @@ LRESULT CALLBACK WndProc(_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM wParam, 
 	switch (message)
 	{
 	case WM_PAINT:
+	{
+		RECT r;
+		GetClientRect(hWnd, &r);
+		th.Resize(r.right - r.left, r.bottom - r.top);
 		break;
+	}
 	case WM_CLEAR:
 		break;
 	case WM_DESTROY:

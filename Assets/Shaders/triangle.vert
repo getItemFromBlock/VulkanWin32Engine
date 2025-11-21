@@ -21,12 +21,12 @@ layout (location = 1) out vec3 fragColor;
 
 void main()
 {
-	vec4 objectData = ObjectBuffer.objects[gl_BaseInstance];
+	vec4 objectData = objectBuffer.objects[gl_InstanceIndex];
 	float cr = cos(objectData.z);
 	float sr = sin(objectData.z);
 	vec2 dest = vec2(	inPosition.x * cr + inPosition.y * sr,
-						inPosition.x * sr - inPosition.y * cr);
-	dest = (dest * ubo.scale + objectData.xy) / ubo.invRes;
+						inPosition.y * cr - inPosition.x * sr);
+	dest = (dest * ubo.scale + objectData.xy) * ubo.invRes * 2.0 - 1.0;
 	gl_Position = vec4(dest, inPosition.z, 1.0);
 	fragUV = inUV;
 	fragColor = inColor;

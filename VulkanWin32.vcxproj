@@ -132,6 +132,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Externals\VkBootstrap.cpp" />
+    <ClCompile Include="Sources\GameThread.cpp" />
     <ClCompile Include="Sources\Main.cpp" />
     <ClCompile Include="Sources\Maths\Maths.cpp" />
     <ClCompile Include="Sources\RenderThread.cpp" />
@@ -143,6 +144,7 @@
     <ClInclude Include="Externals\VkBootstrapFeatureChain.h" />
     <ClInclude Include="Externals\vulkan.h" />
     <ClInclude Include="Externals\vulkan_win32.h" />
+    <ClInclude Include="Headers\GameThread.hpp" />
     <ClInclude Include="Headers\Maths\Maths.hpp" />
     <ClInclude Include="Headers\RenderThread.hpp" />
     <ClInclude Include="Headers\Resource\Mesh.hpp" />
