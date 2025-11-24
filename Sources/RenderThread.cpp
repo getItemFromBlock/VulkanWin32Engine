@@ -4,9 +4,6 @@
 #include <time.h>
 #include <fstream>
 
-#include <dwmapi.h>
-#pragma comment(lib, "dwmapi")
-
 using namespace Maths;
 
 std::string LoadFile(const std::string &path)
@@ -25,11 +22,11 @@ std::string LoadFile(const std::string &path)
 	return result;
 }
 
-void RenderThread::Init(HWND hwnd, HINSTANCE hinstance, Maths::IVec2 resIn)
+void RenderThread::Init(HWND hwnd, HINSTANCE hinstance, HRGN area, Maths::IVec2 resIn)
 {
 	appData.hWnd = hwnd;
 	appData.hInstance = hinstance;
-	appData.region = CreateRectRgn(0, 0, -1, -1);
+	appData.region = area;
 	res = resIn;
 	thread = std::thread(&RenderThread::ThreadFunc, this);
 }
@@ -77,7 +74,7 @@ void RenderThread::InitThread()
 
 void GameThread::Update()
 {
-
+	
 }
 
 void RenderThread::ThreadFunc()
@@ -125,7 +122,6 @@ void RenderThread::ThreadFunc()
 	appData.disp.deviceWaitIdle();
 	UnloadAssets();
 	Cleanup();
-	DeleteObject(appData.region);
 
 	if (!exit)
 		crashed = true;
@@ -297,7 +293,7 @@ bool RenderThread::CreateSwapchain()
 	format.colorSpace = VkColorSpaceKHR::VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
 	format.format = VK_FORMAT_B8G8R8A8_UNORM;
 	swapchainBuilder.set_desired_format(format);
-	swapchainBuilder.set_composite_alpha_flags(VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR);
+	swapchainBuilder.set_composite_alpha_flags(VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR);
 	VkSurfaceCapabilitiesKHR surfaceCaps = {};
 	vkGetPhysicalDeviceSurfaceCapabilitiesKHR(appData.device.physical_device, appData.surface, &surfaceCaps);
 	auto swapRet = swapchainBuilder.set_old_swapchain(appData.swapchain).build(x, y);

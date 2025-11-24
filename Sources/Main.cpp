@@ -12,6 +12,7 @@
 WCHAR szClassName[] = L"MainClass";
 WCHAR szTitle[] = L"Vulkan Demo";
 HCURSOR cursorHide;
+HRGN area;
 bool captured = false;
 bool fullscreen = false;
 RenderThread rh;
@@ -66,7 +67,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 
 		WNDCLASSEXW wcex = {};
 		wcex.cbSize = sizeof(WNDCLASSEX);
-		wcex.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
+		wcex.style = CS_HREDRAW | CS_VREDRAW;
 		wcex.lpfnWndProc = WndProc;
 		wcex.cbClsExtra = 0;
 		wcex.cbWndExtra = 0;
@@ -90,16 +91,22 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		}
 		HWND hWnd = CreateWindowExW(WS_EX_OVERLAPPEDWINDOW, szClassName, szTitle, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 800, 600, NULL, NULL, hInstance, NULL);
 
+		area = CreateRectRgn(0, 0, -1, -1);
+		DWM_BLURBEHIND bb = { 0 };
+		bb.dwFlags = DWM_BB_ENABLE | DWM_BB_BLURREGION;
+		bb.hRgnBlur = NULL;
+		bb.fEnable = TRUE;
+		HRESULT r = DwmEnableBlurBehindWindow(hWnd, &bb);
+		if (r != S_OK)
+			MessageBoxW(hWnd, L"Call to DwmEnableBlurBehindWindow failed!", szTitle, NULL);
+
 		ShowWindow(hWnd, nCmdShow);
 		UpdateWindow(hWnd);
 
 		LONG_PTR lExStyle = GetWindowLongPtr(hWnd, GWL_EXSTYLE);
-		lExStyle &= ~(WS_EX_DLGMODALFRAME | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE);
+		lExStyle &= ~(WS_EX_DLGMODALFRAME | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE | WS_EX_TRANSPARENT | WS_EX_LAYERED);
 		SetWindowLongPtr(hWnd, GWL_EXSTYLE, lExStyle);
 		SetWindowPos(hWnd, NULL, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER);
-		//LONG exStyle = GetWindowLongW(hWnd, GWL_EXSTYLE);
-		//exStyle |= WS_EX_TRANSPARENT | WS_EX_LAYERED;
-		//SetWindowLongW(hWnd, GWL_EXSTYLE, exStyle);
 		SetLayeredWindowAttributes(hWnd, RGB(255,0,0), 255, LWA_ALPHA);
 		if (!hWnd)
 		{
@@ -108,7 +115,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		}
 
 		gh.Init(hWnd, Maths::IVec2(800, 600));
-		rh.Init(hWnd, hInstance, Maths::IVec2(800, 600));
+		rh.Init(hWnd, hInstance, area, Maths::IVec2(800, 600));
 
 		// Main message loop:
 		MSG msg;
@@ -119,6 +126,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		}
 		gh.Quit();
 		rh.Quit();
+		DeleteObject(area);
 		return (int)msg.wParam;
 	}
 }

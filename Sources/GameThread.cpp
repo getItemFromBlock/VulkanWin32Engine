@@ -53,7 +53,7 @@ void GameThread::SendErrorPopup(const std::string &err)
 {
 	LogMessage(err);
 #ifdef NDEBUG
-	MessageBoxA(appData.hWnd, err.c_str(), "Error!", MB_YESNO);
+	MessageBoxA(hWnd, err.c_str(), "Error!", MB_YESNO);
 #else
 	if (MessageBoxA(hWnd, (err + "\nBreak?").c_str(), "Error!", MB_YESNO) == IDYES)
 		DebugBreak();
@@ -64,7 +64,7 @@ void GameThread::SendErrorPopup(const std::wstring &err)
 {
 	LogMessage(err);
 #ifdef NDEBUG
-	MessageBoxW(appData.hWnd, err.c_str(), L"Error!", MB_YESNO);
+	MessageBoxW(hWnd, err.c_str(), L"Error!", MB_YESNO);
 #else
 	if (MessageBoxW(hWnd, (err + L"\nBreak?").c_str(), L"Error!", MB_YESNO) == IDYES)
 		DebugBreak();
