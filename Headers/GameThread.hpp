@@ -11,7 +11,11 @@
 
 #include "Maths/Maths.hpp"
 
-const u32 OBJECT_COUNT = 1000000;
+const u32 OBJECT_COUNT = 1000;
+const u32 CELL_SIZE = 128;
+const float BOID_DIST_MAX = 128.0f;
+const float BOID_DIST_MIN = 64.0f;
+const float BOID_MAX_SPEED = 75.0f;
 
 class GameThread
 {
@@ -43,6 +47,7 @@ private:
 	std::bitset<256> keyPress = 0;
 	std::bitset<256> keyToggle = 0;
 	Maths::IVec2 res;
+	Maths::IVec2 cellCount;
 	std::atomic<u64> storedRes;
 	Maths::Vec2 storedDelta;
 	Maths::Vec3 position = Maths::Vec3(-5.30251f, 6.38824f, -7.8891f);
@@ -50,8 +55,24 @@ private:
 	f32 fov = 3.55f;
 	f64 appTime = 0;
 
+	std::vector<Maths::Vec2> positions;
+	std::vector<Maths::Vec2> velocities;
+	std::vector<Maths::Vec2> accels;
+	std::vector<float> rotations;
+
+	std::vector<std::vector<u32>> cells;
+
+	std::vector<Maths::Vec4> bufferA;
+	std::vector<Maths::Vec4> bufferB;
+	std::atomic_bool currentBuf = false;
+
 	void ThreadFunc();
 	void HandleResize();
 	void InitThread();
-	void Update();
+	void PreUpdate();
+	void Update(float deltaTime);
+	void PostUpdate(float deltaTime);
+	void UpdateBuffers();
+	float NextFloat01();
+	s32 GetCell(Maths::IVec2 pos, Maths::IVec2 &dt);
 };

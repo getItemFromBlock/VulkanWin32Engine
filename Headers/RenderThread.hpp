@@ -32,6 +32,7 @@ struct AppData
 {
 	HWND hWnd;
 	HINSTANCE hInstance;
+	GameThread *gm;
 	vkb::Instance instance;
 	vkb::InstanceDispatchTable instDisp;
 	VkSurfaceKHR surface;
@@ -88,7 +89,7 @@ public:
 	RenderThread() = default;
 	~RenderThread() = default;
 
-	void Init(HWND hwnd, HINSTANCE hInstance, Maths::IVec2 res);
+	void Init(HWND hwnd, HINSTANCE hInstance, GameThread *gm, Maths::IVec2 res);
 	void Resize(s32 x, s32 y);
 	bool HasFinished() const;
 	bool HasCrashed() const;

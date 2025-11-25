@@ -118,7 +118,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		}
 
 		gh.Init(hWnd, Maths::IVec2(800, 600));
-		rh.Init(hWnd, hInstance, Maths::IVec2(800, 600));
+		rh.Init(hWnd, hInstance, &gh, Maths::IVec2(800, 600));
 
 		// Main message loop:
 		MSG msg;
@@ -127,8 +127,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 			TranslateMessage(&msg);
 			DispatchMessageW(&msg);
 		}
-		gh.Quit();
 		rh.Quit();
+		gh.Quit();
 		return (int)msg.wParam;
 	}
 }

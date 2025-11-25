@@ -22,10 +22,11 @@ std::string LoadFile(const std::string &path)
 	return result;
 }
 
-void RenderThread::Init(HWND hwnd, HINSTANCE hinstance, Maths::IVec2 resIn)
+void RenderThread::Init(HWND hwnd, HINSTANCE hinstance, GameThread *gm, Maths::IVec2 resIn)
 {
 	appData.hWnd = hwnd;
 	appData.hInstance = hinstance;
+	appData.gm = gm;
 	res = resIn;
 	thread = std::thread(&RenderThread::ThreadFunc, this);
 }
@@ -69,11 +70,6 @@ void RenderThread::InitThread()
 	SetThreadDescription(GetCurrentThread(), L"Render Thread");
 	std::chrono::time_point<std::chrono::system_clock> now = std::chrono::system_clock::now();
 	start = now.time_since_epoch();
-}
-
-void GameThread::Update()
-{
-	
 }
 
 void RenderThread::ThreadFunc()
@@ -1027,14 +1023,12 @@ bool RenderThread::UpdateUniformBuffer(u32 image)
 {
 	Vec4 *dataPtr = renderData.objectBuffersMapped[image];
 	dataPtr[0] = Vec4(1.0f/res.x, 1.0f/res.y, 30, 30);
-	float tmMod = (float)(fmod(appTime, M_PI * 2));
 
-	for (u32 i = 0; i < OBJECT_COUNT; i++)
-	{
-		const s32 spacing = 50;
-		Vec2 pos = Vec2(10 + (i*spacing) % (res.x - 20), 10 + (i*spacing) / (res.x - 20) * spacing % (res.y - 20));
-		dataPtr[i+4] = Vec4(pos.x, pos.y, tmMod, 0.0f);
-	}
+	const auto& data = appData.gm->GetSimulationData();
+	if (data.size() < OBJECT_COUNT)
+		return true;
+	std::copy(data.data(), data.data() + OBJECT_COUNT, dataPtr + 1);
+
 	return true;
 }
 
