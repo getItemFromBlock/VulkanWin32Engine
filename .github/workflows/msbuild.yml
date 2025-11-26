@@ -50,16 +50,12 @@ jobs:
         Start-Process -FilePath $vulkanInstaller -Wait -ArgumentList @("--accept-licenses", "--default-answer", "--confirm-command", "install")
         Remove-Item -Path $vulkanInstaller
 
-    - name: Print deez balls
+    - name: Fix environment variables
       run: |
+          "VULKAN_SDK=$env:VULKAN_SDK" >> $env:GITHUB_ENV
           Import-Module "$env:ChocolateyInstall/helpers/chocolateyInstaller.psm1"
           refreshenv
-          echo "VULKAN_SDK is $env:VULKAN_SDK $VULKAN_SDK"
-
-    - run: |
-          "VULKAN_SDK=D:/a/VulkanWin32Engine/VulkanWin32Engine/VULKAN_SDK" >> $env:GITHUB_ENV
-    - run: |
-          $env:VULKAN_SDK
+          echo "VULKAN_SDK is $env:VULKAN_SDK"
 
     - name: Add MSBuild to PATH
       uses: microsoft/setup-msbuild@v1.0.2
