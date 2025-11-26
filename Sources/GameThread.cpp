@@ -233,9 +233,14 @@ void GameThread::UpdateBuffers()
 	currentBuf = !currentBuf;
 }
 
-const std::vector<Maths::Vec4> GameThread::GetSimulationData() const
+const std::vector<Maths::Vec4> &GameThread::GetSimulationData() const
 {
 	return currentBuf ? bufferB : bufferA;
+}
+
+const Maths::Mat4 & GameThread::GetViewProjectionMatrix() const
+{
+	return currentBuf ? vpB : vpA;
 }
 
 void GameThread::ProcessCellUpdate(u32 cx, u32 cy, float deltaTime)
