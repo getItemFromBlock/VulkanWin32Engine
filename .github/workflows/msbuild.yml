@@ -73,4 +73,4 @@ jobs:
 
     - name: Run unit test
       working-directory: ${{env.GITHUB_WORKSPACE}}
-      run: ./x64/${{env.BUILD_CONFIGURATION}}/VulkanWin32354.exe --test
+      run: ./x64/${{env.BUILD_CONFIGURATION}}/VulkanWin32.exe --test

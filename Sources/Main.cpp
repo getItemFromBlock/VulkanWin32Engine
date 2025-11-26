@@ -16,10 +16,9 @@ WCHAR szTitle[] = L"Vulkan Demo";
 HCURSOR cursorHide;
 HRGN area;
 UINT customMessage = 0;
-bool captured = false;
-bool fullscreen = false;
+std::atomic_bool captured = false;
+std::atomic_bool fullscreen = false;
 bool isUnitTest = false;
-std::mutex mainThreadLock;
 RenderThread rh;
 GameThread gh;
 
@@ -157,7 +156,6 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 
 LRESULT CALLBACK WndProc(_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM wParam, _In_ LPARAM lParam)
 {
-	std::scoped_lock(mainThreadLock);
 	switch (message)
 	{
 	case WM_PAINT:
@@ -237,7 +235,6 @@ LRESULT CALLBACK WndProc(_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM wParam, 
 
 void HandleCustomMessage(HWND hWnd, WindowMessage msg, u64 payload)
 {
-	mainThreadLock.lock();
 	switch (msg)
 	{
 	case NONE:
@@ -259,7 +256,6 @@ void HandleCustomMessage(HWND hWnd, WindowMessage msg, u64 payload)
 	default:
 		break;
 	}
-	mainThreadLock.unlock();
 }
 
 void OnMoveMouse(HWND hwnd, bool reset)

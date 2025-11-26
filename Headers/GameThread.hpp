@@ -77,7 +77,7 @@ private:
 	std::atomic<u64> storedRes;
 	Maths::Vec2 storedDelta;
 	Maths::Vec3 position = Maths::Vec3(0,3,0);
-	Maths::Vec2 rotation = Maths::Vec2(0, M_PI*5/4);
+	Maths::Vec2 rotation = Maths::Vec2(0, (float)(M_PI*5/4));
 	Maths::Quat rotationQuat;
 	u32 customMessage = 0;
 	f32 fov = 3.55f;
