@@ -17,6 +17,7 @@ HCURSOR cursorHide;
 HRGN area;
 bool captured = false;
 bool fullscreen = false;
+bool isUnitTest = false;
 RenderThread rh;
 GameThread gh;
 
@@ -65,6 +66,20 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 	//_CrtSetBreakAlloc(163);
 #endif
 	{
+		LPWSTR *arglist;
+		s32 argCount = 0;
+		arglist = CommandLineToArgvW(pCmdLine, &argCount);
+		const std::wstring text = L"--test";
+		for (s32 i = 0; i < argCount; i++)
+		{
+			if (text.compare(arglist[i]) == 0)
+			{
+				isUnitTest = true;
+				break;
+			}
+		}
+		LocalFree(arglist);
+
 		cursorHide = nullptr;
 
 		WNDCLASSEXW wcex = {};
@@ -117,18 +132,20 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 			return 1;
 		}
 
-		gh.Init(hWnd, Maths::IVec2(800, 600));
+		gh.Init(hWnd, Maths::IVec2(800, 600), isUnitTest);
 		rh.Init(hWnd, hInstance, &gh, Maths::IVec2(800, 600));
 
 		// Main message loop:
 		MSG msg;
-		while (GetMessageW(&msg, NULL, 0, 0) && !rh.HasCrashed())
+		while (GetMessageW(&msg, NULL, 0, 0) && !rh.HasCrashed() && !gh.HasCrashed())
 		{
 			TranslateMessage(&msg);
 			DispatchMessageW(&msg);
 		}
 		rh.Quit();
 		gh.Quit();
+		if (gh.HasCrashed || rh.HasCrashed())
+			return 1;
 		return (int)msg.wParam;
 	}
 }
