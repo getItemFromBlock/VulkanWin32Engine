@@ -39,7 +39,8 @@ public:
 	void Quit();
 	void MoveMouse(Maths::Vec2 delta);
 	void SetKeyState(u8 key, bool state);
-	const std::vector<Maths::Vec4> GetSimulationData() const;
+	const std::vector<Maths::Vec4> &GetSimulationData() const;
+	const Maths::Mat4 &GetViewProjectionMatrix() const;
 
 	static void SendErrorPopup(const std::wstring &err);
 	static void SendErrorPopup(const std::string &err);
@@ -74,6 +75,8 @@ private:
 
 	std::vector<std::vector<u32>> cells;
 
+	Maths::Mat4 vpA;
+	Maths::Mat4 vpB;
 	std::vector<Maths::Vec4> bufferA;
 	std::vector<Maths::Vec4> bufferB;
 	std::atomic_bool currentBuf = false;
