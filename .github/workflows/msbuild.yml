@@ -52,6 +52,8 @@ jobs:
 
     - name: Print deez balls
       run: |
+          Import-Module "$env:ChocolateyInstall/helpers/chocolateyInstaller.psm1"
+          refreshenv
           echo "VULKAN_SDK is $env:VULKAN_SDK $VULKAN_SDK"
 
     - run: |
