@@ -61,8 +61,18 @@ std::wstring GetLastErrorAsString()
     return message;
 }
 
+#ifdef UNIT_TEST
+int wmain(int argc, wchar_t *argv[])
+{
+	HINSTANCE hInstance = GetModuleHandleA(NULL);
+	LPWSTR pCmdLine = GetCommandLineW();
+	int nCmdShow = SW_SHOW;
+
+	AttachConsole(ATTACH_PARENT_PROCESS);
+#else
 int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR pCmdLine, _In_ int nCmdShow)
 {
+#endif
 #ifdef _DEBUG
 	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
 	//_CrtSetBreakAlloc(163);

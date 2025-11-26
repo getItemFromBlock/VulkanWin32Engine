@@ -1,5 +1,9 @@
 #include "GameThread.hpp"
 
+#ifdef UNIT_TEST
+#include <iostream>
+#endif
+
 using namespace Maths;
 
 HWND GameThread::hWnd = NULL;
@@ -105,12 +109,20 @@ void GameThread::SendErrorPopup(const std::wstring &err)
 
 void GameThread::LogMessage(const std::string &msg)
 {
+#ifdef UNIT_TEST
+	std::cout << msg;
+#else
 	OutputDebugStringA(msg.c_str());
+#endif
 }
 
 void GameThread::LogMessage(const std::wstring &msg)
 {
+#ifdef UNIT_TEST
+	std::wcout << msg;
+#else
 	OutputDebugStringW(msg.c_str());
+#endif
 }
 
 bool GameThread::HasCrashed()
@@ -380,7 +392,7 @@ void GameThread::ThreadFunc()
 	InitThread();
 
 	if (isUnitTest)
-		LogMessage("Unit test");
+		LogMessage("Starting unit test:\n");
 
 	u32 counter = 0;
 	u32 tm0 = 0;
