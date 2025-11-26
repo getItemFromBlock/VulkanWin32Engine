@@ -13,6 +13,7 @@
 
 const u32 OBJECT_COUNT = 30000;
 const u32 CELL_SIZE = 64;
+const u32 BOID_CHUNK = 512;
 const float BOID_DIST_MAX = 64.0f;
 const float BOID_DIST_MIN = 12.0f;
 const float BOID_MAX_SPEED = 250.0f;
@@ -97,5 +98,4 @@ private:
 	bool ThreadPoolUpdate();
 	void ProcessCellUpdate(u32 x, u32 y, float deltaTime);
 	void ProcessPostUpdate(u32 start, u32 end, float deltaTime);
-	void GatherThreadCells();
 };

@@ -207,13 +207,13 @@ void GameThread::Update(float deltaTime)
 void GameThread::PostUpdate(float deltaTime)
 {
 	taskLock.lock();
-	for (u32 x = 0; x < OBJECT_COUNT; x+= 512)
+	for (u32 x = 0; x < OBJECT_COUNT; x+= BOID_CHUNK)
 	{
 		PoolTask task;
 		task.taskID = 1;
 		task.deltaTime = deltaTime;
 		task.cellX = x;
-		task.cellY = Util::MinU(x + 512, OBJECT_COUNT);
+		task.cellY = Util::MinU(x + BOID_CHUNK, OBJECT_COUNT);
 		tasks.push_back(task);
 	}
 	taskCounter = tasks.size();
@@ -397,7 +397,6 @@ void GameThread::ThreadFunc()
 		cursorPos.y = p.y;
 		mousePressed = click;
 		
-
 		// Hard cap movement to 30 fps so that deltatime does not gets too big
 		if (deltaTime > 0.033f)
 			deltaTime = 0.033f;
