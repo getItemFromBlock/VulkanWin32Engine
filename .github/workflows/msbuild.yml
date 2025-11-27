@@ -21,7 +21,12 @@ env:
   # Configuration type to build.
   # You can convert this to a build matrix if you need coverage of multiple configuration types.
   # https://docs.github.com/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
-  BUILD_CONFIGURATION: UnitTest_R
+  BUILD_CONFIGURATION_R: UnitTest_R
+  BUILD_CONFIGURATION_D: UnitTest_D
+  BUILD_CONFIGURATION: Release
+
+  CMD_ARTIFACT: VulkanWin32-cmd
+  APP_ARTIFACT: VulkanWin32-app
 
 permissions:
   contents: read
@@ -65,12 +70,50 @@ jobs:
       working-directory: ${{env.GITHUB_WORKSPACE}}
       run: nuget restore ${{env.SOLUTION_FILE_PATH}}
 
-    - name: Build
+    - name: Build Debug unit tests
+      working-directory: ${{env.GITHUB_WORKSPACE}}
+      # Add additional options to the MSBuild command line here (like platform or verbosity level).
+      # See https://docs.microsoft.com/visualstudio/msbuild/msbuild-command-line-reference
+      run: msbuild /m /p:Configuration=${{env.BUILD_CONFIGURATION_D}} ${{env.SOLUTION_FILE_PATH}}
+
+    - name: Build Release unit tests
+      working-directory: ${{env.GITHUB_WORKSPACE}}
+      # Add additional options to the MSBuild command line here (like platform or verbosity level).
+      # See https://docs.microsoft.com/visualstudio/msbuild/msbuild-command-line-reference
+      run: msbuild /m /p:Configuration=${{env.BUILD_CONFIGURATION_R}} ${{env.SOLUTION_FILE_PATH}}
+
+    - name: Build Release
       working-directory: ${{env.GITHUB_WORKSPACE}}
       # Add additional options to the MSBuild command line here (like platform or verbosity level).
       # See https://docs.microsoft.com/visualstudio/msbuild/msbuild-command-line-reference
       run: msbuild /m /p:Configuration=${{env.BUILD_CONFIGURATION}} ${{env.SOLUTION_FILE_PATH}}
 
+    - name: Create cmd artifact
+      working-directory: ${{env.GITHUB_WORKSPACE}}
+      run: |
+        Copy-Item ./x64/${{env.BUILD_CONFIGURATION_R}}/VulkanWin32.exe ./
+        $compress = @{ Path = "./VulkanWin32.exe", "./Assets/" CompressionLevel = "Optimal" DestinationPath = "./${{env.CMD_ARTIFACT}}.zip" }
+        Compress-Archive @compress
+
+    - name: Create app artifact
+      working-directory: ${{env.GITHUB_WORKSPACE}}
+      run: |
+        Copy-Item ./x64/${{env.BUILD_CONFIGURATION}}/VulkanWin32.exe ./
+        $compress = @{ Path = "./VulkanWin32.exe", "./Assets/" CompressionLevel = "Optimal" DestinationPath = "./${{env.APP_ARTIFACT}}.zip" }
+        Compress-Archive @compress
+
     - name: Run unit test
       working-directory: ${{env.GITHUB_WORKSPACE}}
-      run: ./x64/${{env.BUILD_CONFIGURATION}}/VulkanWin32.exe --test
+      run: ./x64/${{env.BUILD_CONFIGURATION_R}}/VulkanWin32.exe --test
+
+    - name: Upload cmd artifact
+      uses: actions/upload-artifact@master
+      with:
+       name: ${{env.CMD_ARTIFACT}}
+       path: ./${{env.CMD_ARTIFACT}}.zip
+
+    - name: Upload app artifact
+      uses: actions/upload-artifact@master
+      with:
+       name: ${{env.APP_ARTIFACT}}
+       path: ./${{env.APP_ARTIFACT}}.zip
