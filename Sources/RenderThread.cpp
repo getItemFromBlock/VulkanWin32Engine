@@ -1,5 +1,7 @@
 #include "RenderThread.hpp"
 
+#include "Resource/Texture.hpp"
+
 #include <filesystem>
 #include <time.h>
 #include <fstream>
@@ -366,6 +368,49 @@ VkShaderModule RenderThread::CreateShaderModule(const std::string &code)
 	return shaderModule;
 }
 
+bool RenderThread::CreateImage(	IVec2 res, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
+								VkMemoryPropertyFlags properties, VkImage &image, VkDeviceMemory &memory)
+{
+	VkImageCreateInfo imageInfo = {};
+	imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	imageInfo.imageType = VK_IMAGE_TYPE_2D;
+	imageInfo.extent.width = (u32)(res.x);
+	imageInfo.extent.height = (u32)(res.y);
+	imageInfo.extent.depth = 1;
+	imageInfo.mipLevels = 1;
+	imageInfo.arrayLayers = 1;
+	imageInfo.format = format;
+	imageInfo.tiling = tiling;
+	imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	imageInfo.usage = usage;
+	imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+	imageInfo.flags = 0; // Optional
+
+	if (appData.disp.createImage(&imageInfo, nullptr, &image) != VK_SUCCESS)
+	{
+		GameThread::SendErrorPopup("failed to create image!");
+		return false;
+	}
+
+	VkMemoryRequirements memRequirements;
+	appData.disp.getImageMemoryRequirements(image, &memRequirements);
+
+	VkMemoryAllocateInfo allocInfo = {};
+	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocInfo.allocationSize = memRequirements.size;
+	allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, properties);
+
+	if (appData.disp.allocateMemory(&allocInfo, nullptr, &memory) != VK_SUCCESS)
+	{
+		GameThread::SendErrorPopup("failed to allocate image memory!");
+		return false;
+	}
+
+	appData.disp.bindImageMemory(image, memory, 0);
+	return true;
+}
+
 VkVertexInputBindingDescription RenderThread::GetBindingDescription()
 {
 	VkVertexInputBindingDescription bindingDescription = {};
@@ -653,6 +698,38 @@ bool RenderThread::CreateCommandPool()
 		return false;
 	}
 	return true;
+}
+
+bool RenderThread::CreateTextureImage()
+{
+	IVec2 res;
+	u8 *pixels = Resource::Texture::ReadTexture("Assets/Textures/FISH.png", res);
+	if (!pixels)
+	{
+		GameThread::SendErrorPopup("failed to load texture");
+		return false;
+	}
+	u64 imageSize = sizeof(u32) * res.x * res.y;
+
+	VkBuffer stagingBuffer;
+	VkDeviceMemory stagingBufferMemory;
+	CreateBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+
+	void *data;
+	appData.disp.mapMemory(stagingBufferMemory, 0, imageSize, 0, &data);
+	memcpy(data, pixels, static_cast<size_t>(imageSize));
+	appData.disp.unmapMemory(stagingBufferMemory);
+
+	Resource::Texture::FreeTextureData(pixels);
+
+	CreateImage(res, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+				VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, renderData.textureImage, renderData.textureImageMemory);
+
+	return true;
+}
+
+VkCommandBuffer RenderThread::BeginSingleTimeCommands()
+{
 }
 
 bool RenderThread::CreateDepthResources()

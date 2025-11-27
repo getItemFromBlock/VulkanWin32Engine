@@ -251,8 +251,11 @@
     <ClCompile Include="Sources\Maths\Maths.cpp" />
     <ClCompile Include="Sources\RenderThread.cpp" />
     <ClCompile Include="Sources\Resource\Mesh.cpp" />
+    <ClCompile Include="Sources\Resource\Texture.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Externals\stb_image.h" />
+    <ClInclude Include="Externals\stb_image_write.h" />
     <ClInclude Include="Externals\VkBootstrap.h" />
     <ClInclude Include="Externals\VkBootstrapDispatch.h" />
     <ClInclude Include="Externals\VkBootstrapFeatureChain.h" />
@@ -262,6 +265,7 @@
     <ClInclude Include="Headers\Maths\Maths.hpp" />
     <ClInclude Include="Headers\RenderThread.hpp" />
     <ClInclude Include="Headers\Resource\Mesh.hpp" />
+    <ClInclude Include="Headers\Resource\Texture.hpp" />
     <ClInclude Include="Headers\Types.hpp" />
   </ItemGroup>
   <ItemGroup>

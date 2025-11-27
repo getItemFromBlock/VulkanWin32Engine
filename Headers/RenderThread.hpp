@@ -75,6 +75,9 @@ struct RenderData
 	VkDescriptorPool descriptorPool;
 	std::vector<VkDescriptorSet> descriptorSets;
 
+	VkImage textureImage;
+	VkDeviceMemory textureImageMemory;
+
 	u32 currentFrame = 0;
 };
 
@@ -122,6 +125,7 @@ private:
 
 	VkSurfaceKHR CreateSurfaceWin32(VkInstance instance, HINSTANCE hInstance, HWND window, VkAllocationCallbacks *allocator = nullptr);
 	VkShaderModule CreateShaderModule(const std::string &code);
+	bool CreateImage(IVec2 res, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage &image, VkDeviceMemory &memory);
 	VkVertexInputBindingDescription GetBindingDescription();
 	std::array<VkVertexInputAttributeDescription, 4> GetAttributeDescriptions();
 	bool InitVulkan();
@@ -133,6 +137,7 @@ private:
 	bool CreateGraphicsPipeline();
 	bool CreateFramebuffers();
 	bool CreateCommandPool();
+	bool CreateTextureImage();
 	bool CreateDepthResources();
 	bool CreateVertexBuffer(const Resource::Mesh &m);
 	bool CreateObjectBuffer(const u32 objectCount);
