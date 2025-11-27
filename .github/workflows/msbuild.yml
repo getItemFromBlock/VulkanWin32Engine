@@ -103,7 +103,7 @@ jobs:
         mkdir ./${{env.APP_ARTIFACT}}_build
         Copy-Item ./x64/${{env.BUILD_CONFIGURATION}}/VulkanWin32.exe ./${{env.APP_ARTIFACT}}_build/
         Copy-Item ./Assets/ ./${{env.APP_ARTIFACT}}_build/ -Recurse
-        $compress = @{ Path = "../${{env.APP_ARTIFACT}}_build/"; CompressionLevel = "Optimal"; DestinationPath = "./${{env.APP_ARTIFACT}}.zip" }
+        $compress = @{ Path = "./${{env.APP_ARTIFACT}}_build/"; CompressionLevel = "Optimal"; DestinationPath = "./${{env.APP_ARTIFACT}}.zip" }
         Compress-Archive @compress
 
     - name: Upload cmd artifact
