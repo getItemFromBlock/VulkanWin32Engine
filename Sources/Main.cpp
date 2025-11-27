@@ -21,8 +21,12 @@ std::atomic_bool fullscreen = false;
 RenderThread rh;
 GameThread gh;
 
-bool isUnitTest = false;
-u32 targetDevice = 0;
+struct LaunchArgs
+{
+	Maths::IVec2 defaultRes = Maths::IVec2(800, 600);
+	u32 targetDevice = 0;
+	bool isUnitTest = false;
+} launchArgs;
 
 struct SavedInfos
 {
@@ -40,24 +44,17 @@ void HandleCustomMessage(HWND hWnd, WindowMessage msg, u64 payload);
 
 std::wstring GetLastErrorAsString()
 {
-    //Get the error message ID, if any.
     DWORD errorMessageID = GetLastError();
-    if(errorMessageID == 0)
+    if(!errorMessageID)
 	{
-        return std::wstring(); //No error message has been recorded
+        return std::wstring();
     }
     
     LPWSTR messageBuffer = nullptr;
-
-    //Ask Win32 to give us the string version of that message ID.
-    //The parameters we pass in, tell Win32 to create the buffer that holds the message for us (because we don't yet know how long the message string will be).
-    size_t size = FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+	u32 size = FormatMessageW(	FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
                                  NULL, errorMessageID, MAKELANGID(LANG_ENGLISH, SUBLANG_DEFAULT), (LPWSTR)&messageBuffer, 0, NULL);
     
-    //Copy the error message into a std::string.
     std::wstring message(messageBuffer, size);
-    
-    //Free the Win32's string's buffer.
     LocalFree(messageBuffer);
             
     return message;
@@ -85,17 +82,25 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		arglist = CommandLineToArgvW(pCmdLine, &argCount);
 		const std::wstring testText = L"--test";
 		const std::wstring deviceText = L"--device=";
+		const std::wstring widthText = L"--width=";
+		const std::wstring heightText = L"--height=";
 		for (s32 i = 0; i < argCount; i++)
 		{
 			if (testText.compare(arglist[i]) == 0)
 			{
-				isUnitTest = true;
-				break;
+				launchArgs.isUnitTest = true;
 			}
 			else if (deviceText.compare(0, deviceText.size(), arglist[i], deviceText.size()) == 0)
 			{
-				targetDevice = std::stoi(arglist[i] + deviceText.size());
-				break;
+				launchArgs.targetDevice = Maths::Util::MaxI(0, std::stoi(arglist[i] + deviceText.size()));
+			}
+			else if (widthText.compare(0, widthText.size(), arglist[i], widthText.size()) == 0)
+			{
+				launchArgs.defaultRes.x = Maths::Util::MaxI(64, std::stoi(arglist[i] + widthText.size()));
+			}
+			else if (heightText.compare(0, heightText.size(), arglist[i], heightText.size()) == 0)
+			{
+				launchArgs.defaultRes.y = Maths::Util::MaxI(64, std::stoi(arglist[i] + heightText.size()));
 			}
 		}
 		LocalFree(arglist);
@@ -126,7 +131,9 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		{
 			MessageBoxW(NULL, L"Could not set window dpi awareness !", szTitle, NULL);
 		}
-		HWND hWnd = CreateWindowExW(WS_EX_OVERLAPPEDWINDOW, szClassName, szTitle, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 800, 600, NULL, NULL, hInstance, NULL);
+		HWND hWnd = CreateWindowExW(WS_EX_OVERLAPPEDWINDOW, szClassName, szTitle, WS_OVERLAPPEDWINDOW,
+									CW_USEDEFAULT, CW_USEDEFAULT, launchArgs.defaultRes.x,
+									launchArgs.defaultRes.y, NULL, NULL, hInstance, NULL);
 
 		area = CreateRectRgn(0, 0, -1, -1);
 		DWM_BLURBEHIND bb = { 0 };
@@ -141,10 +148,17 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		ShowWindow(hWnd, nCmdShow);
 		UpdateWindow(hWnd);
 
-		LONG_PTR lExStyle = GetWindowLongPtr(hWnd, GWL_EXSTYLE);
+		LONG_PTR lExStyle = GetWindowLongPtrW(hWnd, GWL_EXSTYLE);
 		lExStyle &= ~(WS_EX_DLGMODALFRAME | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE | WS_EX_TRANSPARENT | WS_EX_LAYERED);
-		SetWindowLongPtr(hWnd, GWL_EXSTYLE, lExStyle);
-		SetWindowPos(hWnd, NULL, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER);
+		SetWindowLongPtrW(hWnd, GWL_EXSTYLE, lExStyle);
+
+		RECT windowRect = {};
+		GetWindowRect(hWnd, &windowRect);
+		windowRect.right = windowRect.left + launchArgs.defaultRes.x;
+		windowRect.bottom = windowRect.top + launchArgs.defaultRes.y;
+		AdjustWindowRectEx(&windowRect, GetWindowLongPtrW(hWnd, GWL_STYLE), false, lExStyle);
+		
+		SetWindowPos(hWnd, NULL, 0, 0, windowRect.right - windowRect.left, windowRect.bottom - windowRect.top, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOZORDER | SWP_NOOWNERZORDER);
 		SetLayeredWindowAttributes(hWnd, RGB(255,0,0), 255, LWA_ALPHA);
 		if (!hWnd)
 		{
@@ -154,8 +168,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 
 		customMessage = RegisterWindowMessageA("VulkanWin32 Custom Message");
 
-		gh.Init(hWnd, customMessage, Maths::IVec2(800, 600), isUnitTest);
-		rh.Init(hWnd, hInstance, &gh, Maths::IVec2(800, 600), targetDevice);
+		gh.Init(hWnd, customMessage, launchArgs.defaultRes,  launchArgs.isUnitTest);
+		rh.Init(hWnd, hInstance, &gh, launchArgs.defaultRes, launchArgs.targetDevice);
 
 		// Main message loop:
 		MSG msg;
@@ -200,7 +214,7 @@ LRESULT CALLBACK WndProc(_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM wParam, 
 	{
 		LPMINMAXINFO lpMMI = (LPMINMAXINFO)lParam;
 		lpMMI->ptMinTrackSize.x = 64;
-		lpMMI->ptMinTrackSize.y = 128;
+		lpMMI->ptMinTrackSize.y = 64;
 		break;
 	}
 	case WM_KEYDOWN:
@@ -305,8 +319,8 @@ void ToggleFullscreen(HWND hwnd, bool full)
 		savedInfos.maximized = !!IsZoomed(hwnd);
 		if (savedInfos.maximized)
 		SendMessage(hwnd, WM_SYSCOMMAND, SC_RESTORE, 0);
-		savedInfos.style = GetWindowLong(hwnd, GWL_STYLE);
-		savedInfos.exStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
+		savedInfos.style = GetWindowLongW(hwnd, GWL_STYLE);
+		savedInfos.exStyle = GetWindowLongW(hwnd, GWL_EXSTYLE);
 		GetWindowRect(hwnd, &savedInfos.windowRect);
 	}
 
@@ -315,9 +329,9 @@ void ToggleFullscreen(HWND hwnd, bool full)
 	if (fullscreen)
 	{
 		// Set new window style and size.
-		SetWindowLong(	hwnd, GWL_STYLE,
+		SetWindowLongW(	hwnd, GWL_STYLE,
 						savedInfos.style & ~(WS_CAPTION | WS_THICKFRAME));
-		SetWindowLong(	hwnd, GWL_EXSTYLE,
+		SetWindowLongW(	hwnd, GWL_EXSTYLE,
 						savedInfos.exStyle & ~(WS_EX_DLGMODALFRAME |
 						WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE));
 
@@ -325,7 +339,7 @@ void ToggleFullscreen(HWND hwnd, bool full)
 		// not resize.
 		MONITORINFO monitor_info;
 		monitor_info.cbSize = sizeof(monitor_info);
-		GetMonitorInfo(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &monitor_info);
+		GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &monitor_info);
 		RECT window_rect(monitor_info.rcMonitor);
 		SetWindowPos(	hwnd, NULL, window_rect.left, window_rect.top,
 						window_rect.right - window_rect.left, window_rect.bottom - window_rect.top,
@@ -336,8 +350,8 @@ void ToggleFullscreen(HWND hwnd, bool full)
 		// Reset original window style and size.	The multiple window size/moves
 		// here are ugly, but if SetWindowPos() doesn't redraw, the taskbar won't be
 		// repainted.	Better-looking methods welcome.
-		SetWindowLong(hwnd, GWL_STYLE, savedInfos.style);
-		SetWindowLong(hwnd, GWL_EXSTYLE, savedInfos.exStyle);
+		SetWindowLongW(hwnd, GWL_STYLE, savedInfos.style);
+		SetWindowLongW(hwnd, GWL_EXSTYLE, savedInfos.exStyle);
 
 		// On restore, resize to the previous saved rect size.
 		RECT new_rect(savedInfos.windowRect);

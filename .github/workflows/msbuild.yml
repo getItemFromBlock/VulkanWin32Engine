@@ -91,15 +91,19 @@ jobs:
     - name: Create cmd artifact
       working-directory: ${{env.GITHUB_WORKSPACE}}
       run: |
-        Copy-Item ./x64/${{env.BUILD_CONFIGURATION_R}}/VulkanWin32.exe ./
-        $compress = @{ Path = "./VulkanWin32.exe", "./Assets/"; CompressionLevel = "Optimal"; DestinationPath = "./${{env.CMD_ARTIFACT}}.zip" }
+        mkdir ./${{env.CMD_ARTIFACT}}_build
+        Copy-Item ./x64/${{env.BUILD_CONFIGURATION_R}}/VulkanWin32.exe ./${{env.CMD_ARTIFACT}}_build/
+        Copy-Item ./Assets/ ./${{env.CMD_ARTIFACT}}_build/ -Recurse
+        $compress = @{ Path = "./${{env.CMD_ARTIFACT}}_build/"; CompressionLevel = "Optimal"; DestinationPath = "./${{env.CMD_ARTIFACT}}.zip" }
         Compress-Archive @compress
 
     - name: Create app artifact
       working-directory: ${{env.GITHUB_WORKSPACE}}
       run: |
-        Copy-Item ./x64/${{env.BUILD_CONFIGURATION}}/VulkanWin32.exe ./
-        $compress = @{ Path = "./VulkanWin32.exe", "./Assets/"; CompressionLevel = "Optimal"; DestinationPath = "./${{env.APP_ARTIFACT}}.zip" }
+        mkdir ./${{env.APP_ARTIFACT}}_build
+        Copy-Item ./x64/${{env.BUILD_CONFIGURATION}}/VulkanWin32.exe ./${{env.APP_ARTIFACT}}_build/
+        Copy-Item ./Assets/ ./${{env.APP_ARTIFACT}}_build/ -Recurse
+        $compress = @{ Path = "../${{env.APP_ARTIFACT}}_build/"; CompressionLevel = "Optimal"; DestinationPath = "./${{env.APP_ARTIFACT}}.zip" }
         Compress-Archive @compress
 
     - name: Upload cmd artifact

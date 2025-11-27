@@ -192,6 +192,18 @@ VkSurfaceKHR RenderThread::CreateSurfaceWin32(VkInstance instance, HINSTANCE hIn
 
 bool RenderThread::InitDevice(u32 targetDevice)
 {
+	GameThread::LogMessage("Initializing Vulkan...\n");
+	auto systemInfoRes = vkb::SystemInfo::get_system_info();
+	if (!systemInfoRes)
+	{
+		GameThread::SendErrorPopup("Error creating vulkan instance: " + systemInfoRes.error().message());
+		return false;
+	}
+	auto &systemInfo = systemInfoRes.value();
+	GameThread::LogMessage("Available extensions:\n");
+	for (u32 i = 0; i < systemInfo.available_extensions.size(); i++)
+		GameThread::LogMessage(std::string("- ") + systemInfo.available_extensions[i].extensionName + "\n");
+
 	vkb::InstanceBuilder instanceBuilder;
 	instanceBuilder.enable_extension(VK_KHR_SURFACE_EXTENSION_NAME);
 	instanceBuilder.enable_extension(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
@@ -253,7 +265,7 @@ bool RenderThread::InitDevice(u32 targetDevice)
 		GameThread::LogMessage("Requested GPU id " + std::to_string(targetDevice) + " is not available. Defaulting to first device.\n");
 		targetDevice = 0;
 	}
-
+	GameThread::LogMessage("Using GPU device " + std::to_string(targetDevice) + ": " + deviceList[targetDevice].name + "\n");
 	vkb::PhysicalDevice physicalDevice = deviceList[targetDevice];
 	VkPhysicalDeviceFeatures features = {};
 	features.logicOp = 1;
@@ -272,6 +284,7 @@ bool RenderThread::InitDevice(u32 targetDevice)
 	return true;
 }
 
+bool init = false;
 bool RenderThread::CreateSwapchain()
 {
 	vkb::SwapchainBuilder swapchainBuilder = vkb::SwapchainBuilder(appData.device.physical_device, appData.device, appData.surface);
@@ -281,13 +294,17 @@ bool RenderThread::CreateSwapchain()
 	format.format = VK_FORMAT_B8G8R8A8_UNORM;
 	swapchainBuilder.set_desired_format(format);
 	swapchainBuilder.set_composite_alpha_flags(VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR);
-	VkSurfaceCapabilitiesKHR surfaceCaps = {};
-	vkGetPhysicalDeviceSurfaceCapabilitiesKHR(appData.device.physical_device, appData.surface, &surfaceCaps);
-	GameThread::LogMessage("Supported alpha composite mode(s):\n");
-	for (u32 i = 0; i < 4; i++)
+	if (!init)
 	{
-		if ((1 << i) & surfaceCaps.supportedCompositeAlpha)
-			GameThread::LogMessage(std::string("- ") + alphaBitStrings[i] + "\n");
+		init = true;
+		VkSurfaceCapabilitiesKHR surfaceCaps = {};
+		vkGetPhysicalDeviceSurfaceCapabilitiesKHR(appData.device.physical_device, appData.surface, &surfaceCaps);
+		GameThread::LogMessage("Supported alpha composite mode(s):\n");
+		for (u32 i = 0; i < 4; i++)
+		{
+			if ((1 << i) & surfaceCaps.supportedCompositeAlpha)
+				GameThread::LogMessage(std::string("- ") + alphaBitStrings[i] + "\n");
+		}
 	}
 	auto swapRet = swapchainBuilder.set_old_swapchain(appData.swapchain).build(x, y);
 	swapRes.x = x;
