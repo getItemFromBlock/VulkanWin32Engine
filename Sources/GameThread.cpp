@@ -111,18 +111,16 @@ void GameThread::LogMessage(const std::string &msg)
 {
 #ifdef UNIT_TEST
 	std::cout << msg;
-#else
-	OutputDebugStringA(msg.c_str());
 #endif
+	OutputDebugStringA(msg.c_str());
 }
 
 void GameThread::LogMessage(const std::wstring &msg)
 {
 #ifdef UNIT_TEST
 	std::wcout << msg;
-#else
-	OutputDebugStringW(msg.c_str());
 #endif
+	OutputDebugStringW(msg.c_str());
 }
 
 bool GameThread::HasCrashed()
@@ -432,7 +430,7 @@ void GameThread::ThreadFunc()
 			f32 key = keyCodesDown.test(MOVEMENT_KEYS[i]);
 			dir[i % 3] += (i > 2) ? -key : key;
 		}
-		f32 fovDir = static_cast<f32>(keyDown.test(VK_UP)) - static_cast<f32>(keyDown.test(VK_DOWN));
+		f32 fovDir = static_cast<f32>(keyDown.test(VK_DOWN)) - static_cast<f32>(keyDown.test(VK_UP));
 		bool fullscreen = keyPress.test(VK_F11);
 		bool capture = keyPress.test(VK_ESCAPE);
 		bool shift = keyDown.test(VK_SHIFT);
@@ -494,7 +492,7 @@ void GameThread::ThreadFunc()
 			Update(deltaTime);
 			PostUpdate(deltaTime);
 		}
-		else
+		//else
 			std::this_thread::sleep_for(std::chrono::milliseconds(5));
 		
 		UpdateBuffers(vp);

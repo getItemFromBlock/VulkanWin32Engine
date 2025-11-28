@@ -222,12 +222,38 @@ LRESULT CALLBACK WndProc(_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM wParam, 
 	case WM_KEYUP:
 	case WM_SYSKEYUP:
 	{
+		WORD virtualCode = (WORD)wParam;
 		WORD keyFlags = HIWORD(lParam);
 		WORD scanCode = LOBYTE(keyFlags);
 		BOOL isExtendedKey = (keyFlags & KF_EXTENDED) == KF_EXTENDED;
 		BOOL isKeyDown = (keyFlags & KF_UP) != KF_UP;
 		if (isExtendedKey)
 			scanCode = MAKEWORD(scanCode, 0xE0);
+
+		switch (virtualCode)
+		{
+			case VK_SHIFT:
+			    virtualCode = MapVirtualKeyW(scanCode, MAPVK_VSC_TO_VK_EX);
+			    break;
+			case VK_CONTROL:
+			    virtualCode = isExtendedKey ? VK_RCONTROL : VK_LCONTROL;
+			    break;
+			case VK_MENU:
+			    virtualCode = isExtendedKey ? VK_RMENU : VK_LMENU;
+			    break;
+			default:
+			    break;    
+		}
+
+		if (isKeyDown)
+		{
+			std::stringstream stream;
+			stream << "0x"  << std::setfill('0') << std::setw(sizeof(u16)*2)  << std::hex << virtualCode;
+			GameThread::LogMessage("Key pressed: " + std::to_string(virtualCode) + " (" + stream.str() + ") scancode: ");
+			std::stringstream stream1;
+			stream1 << "0x"  << std::setfill('0') << std::setw(sizeof(u16)*2)  << std::hex << scanCode;
+			GameThread::LogMessage(std::to_string(scanCode) + " (" + stream1.str() + ")\n");
+		}
 
 		gh.SetKeyState((u8)(wParam), (u8)(scanCode), isKeyDown);
 		if (isKeyDown && (lParam & 0x20000000) && wParam == VK_F4)

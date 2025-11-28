@@ -116,6 +116,7 @@ void RenderThread::ThreadFunc(u32 targetDevice)
 
 		if (!DrawFrame())
 			break;
+		std::this_thread::sleep_for(std::chrono::milliseconds(5));
 	}
 
 	appData.disp.deviceWaitIdle();
@@ -771,9 +772,37 @@ bool RenderThread::CreateTextureImage()
 	return true;
 }
 
-VkCommandBuffer RenderThread::BeginSingleTimeCommands()
+VkCommandBuffer RenderThread::BeginSingleTimeCommands(VkCommandPool targetPool)
 {
-	return VkCommandBuffer{};
+	VkCommandBufferAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandPool = targetPool;
+    allocInfo.commandBufferCount = 1;
+
+    VkCommandBuffer commandBuffer;
+	appData.disp.allocateCommandBuffers(&allocInfo, &commandBuffer);
+    
+	VkCommandBufferBeginInfo beginInfo = {};
+	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	appData.disp.beginCommandBuffer(commandBuffer, &beginInfo);
+
+    return commandBuffer;
+}
+
+void RenderThread::EndSingleTimeCommands(VkCommandBuffer commandBuffer, VkCommandPool targetPool, VkQueue targetQueue)
+{
+	appData.disp.endCommandBuffer(commandBuffer);
+
+	VkSubmitInfo submitInfo = {};
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &commandBuffer;
+
+	appData.disp.queueSubmit(targetQueue, 1, &submitInfo, VK_NULL_HANDLE);
+	appData.disp.queueWaitIdle(targetQueue);
+	appData.disp.freeCommandBuffers(targetPool, 1, &commandBuffer);
 }
 
 bool RenderThread::CreateDepthResources()
@@ -820,38 +849,57 @@ bool RenderThread::CreateVertexBuffer(const Resource::Mesh &m)
 
 bool RenderThread::CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)
 {
-	VkCommandBufferAllocateInfo allocInfo = {};
-    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandPool = renderData.transfertCommandPool;
-    allocInfo.commandBufferCount = 1;
-
-    VkCommandBuffer commandBuffer;
-	appData.disp.allocateCommandBuffers(&allocInfo, &commandBuffer);
-    
-	VkCommandBufferBeginInfo beginInfo = {};
-	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-	appData.disp.beginCommandBuffer(commandBuffer, &beginInfo);
+    VkCommandBuffer commandBuffer = BeginSingleTimeCommands(renderData.transfertCommandPool);
 	
-	VkBufferCopy copyRegion{};
+	VkBufferCopy copyRegion = {};
 	copyRegion.srcOffset = 0; // Optional
 	copyRegion.dstOffset = 0; // Optional
 	copyRegion.size = size;
 	appData.disp.cmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
 
-	appData.disp.endCommandBuffer(commandBuffer);
-
-	VkSubmitInfo submitInfo = {};
-	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	submitInfo.commandBufferCount = 1;
-	submitInfo.pCommandBuffers = &commandBuffer;
-
-	appData.disp.queueSubmit(renderData.transferQueue, 1, &submitInfo, VK_NULL_HANDLE);
-	appData.disp.queueWaitIdle(renderData.transferQueue);
-	appData.disp.freeCommandBuffers(renderData.transfertCommandPool, 1, &commandBuffer);
+	EndSingleTimeCommands(commandBuffer, renderData.transfertCommandPool, renderData.transferQueue);
 
 	return true;
+}
+
+bool RenderThread::TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout)
+{
+    VkCommandBuffer commandBuffer = BeginSingleTimeCommands(renderData.commandPool);
+
+	VkImageMemoryBarrier barrier = {};
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.oldLayout = oldLayout;
+	barrier.newLayout = newLayout;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.image = image;
+	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.baseMipLevel = 0;
+	barrier.subresourceRange.levelCount = 1;
+	barrier.subresourceRange.baseArrayLayer = 0;
+	barrier.subresourceRange.layerCount = 1;
+	barrier.srcAccessMask = 0; // TODO
+	barrier.dstAccessMask = 0; // TODO
+
+	appData.disp.cmdPipelineBarrier(
+	    commandBuffer,
+	    0 /* TODO */, 0 /* TODO */,
+	    0,
+	    0, nullptr,
+	    0, nullptr,
+	    1, &barrier
+	);
+
+    EndSingleTimeCommands(commandBuffer, renderData.commandPool, renderData.graphicsQueue);
+
+	return true;
+}
+
+void CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height)
+{
+    //VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+
+    //endSingleTimeCommands(commandBuffer);
 }
 
 bool RenderThread::CreateCommandBuffers()

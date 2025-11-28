@@ -146,7 +146,9 @@ private:
     bool CreateDescriptorPool();
 	bool CreateDescriptorSets();
 	bool RecreateSwapchain();
-	VkCommandBuffer BeginSingleTimeCommands();
+	VkCommandBuffer BeginSingleTimeCommands(VkCommandPool targetPool);
+	void EndSingleTimeCommands(VkCommandBuffer commandBuffer, VkCommandPool targetPool, VkQueue targetQueue);
+	bool TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
 	bool UpdateUniformBuffer(u32 image);
 	u32 FindMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties);
 	VkFormat FindDepthFormat();

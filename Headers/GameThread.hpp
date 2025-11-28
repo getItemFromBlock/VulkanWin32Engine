@@ -11,7 +11,7 @@
 
 #include "Maths/Maths.hpp"
 
-const u32 OBJECT_COUNT = 5000;
+const u32 OBJECT_COUNT = 500;
 const u32 CELL_SIZE = 64;
 const u32 BOID_CHUNK = 512;
 const float BOID_DIST_MAX = 64.0f;

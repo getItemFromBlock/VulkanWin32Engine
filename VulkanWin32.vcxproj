@@ -262,6 +262,7 @@
     <ClInclude Include="Externals\vulkan.h" />
     <ClInclude Include="Externals\vulkan_win32.h" />
     <ClInclude Include="Headers\GameThread.hpp" />
+    <ClInclude Include="Headers\KeyRemapLUT.hpp" />
     <ClInclude Include="Headers\Maths\Maths.hpp" />
     <ClInclude Include="Headers\RenderThread.hpp" />
     <ClInclude Include="Headers\Resource\Mesh.hpp" />
