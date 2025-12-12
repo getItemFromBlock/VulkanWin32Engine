@@ -531,6 +531,7 @@ bool RenderThread::CreateDescriptorSetLayout()
 	objectLayoutBinding.descriptorCount = 1;
 	objectLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 	objectLayoutBinding.pImmutableSamplers = nullptr;
+	ZGHZLFKHD
 
 	VkDescriptorSetLayoutBinding samplerLayoutBinding = {};
 	samplerLayoutBinding.binding = 2;
@@ -559,10 +560,12 @@ bool RenderThread::CreateGraphicsPipeline()
 	const std::filesystem::path defaultPath = std::filesystem::current_path();
 	std::string vertCode = LoadFile(std::filesystem::path(defaultPath).append("Assets/Shaders/triangle.vert.spv").string());
 	std::string fragCode = LoadFile(std::filesystem::path(defaultPath).append("Assets/Shaders/triangle.frag.spv").string());
+	std::string compCode = LoadFile(std::filesystem::path(defaultPath).append("Assets/Shaders/compute.comp.spv").string());
 
 	VkShaderModule vertModule = CreateShaderModule(vertCode);
 	VkShaderModule fragModule = CreateShaderModule(fragCode);
-	if (vertModule == VK_NULL_HANDLE || fragModule == VK_NULL_HANDLE)
+	VkShaderModule compModule = CreateShaderModule(compCode);
+	if (vertModule == VK_NULL_HANDLE || fragModule == VK_NULL_HANDLE || compModule == VK_NULL_HANDLE)
 	{
 		GameThread::SendErrorPopup("failed to create shader module");
 		return false;
@@ -580,7 +583,13 @@ bool RenderThread::CreateGraphicsPipeline()
 	fragStageInfo.module = fragModule;
 	fragStageInfo.pName = "main";
 
-	VkPipelineShaderStageCreateInfo shaderStages[] = { vertStageInfo, fragStageInfo };
+	VkPipelineShaderStageCreateInfo compStageInfo = {};
+	compStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	compStageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+	compStageInfo.module = compModule;
+	compStageInfo.pName = "main";
+
+	VkPipelineShaderStageCreateInfo shaderStages[] = { vertStageInfo, fragStageInfo, compStageInfo };
 
 	auto bindingDescription = GetBindingDescription();
 	auto attributeDescriptions = GetAttributeDescriptions();
@@ -686,7 +695,7 @@ bool RenderThread::CreateGraphicsPipeline()
 
 	VkGraphicsPipelineCreateInfo pipelineInfo = {};
 	pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-	pipelineInfo.stageCount = 2;
+	pipelineInfo.stageCount = 3;
 	pipelineInfo.pStages = shaderStages;
 	pipelineInfo.pVertexInputState = &vertexInputInfo;
 	pipelineInfo.pInputAssemblyState = &inputAssembly;
@@ -712,28 +721,47 @@ bool RenderThread::CreateGraphicsPipeline()
 	return true;
 }
 
-bool RenderThread::CreateObjectBuffer(const u32 objectCount)
+bool RenderThread::CreateObjectBuffers(const u32 objectCount)
 {
-	VkDeviceSize bufferSize = sizeof(Vec4) * objectCount * 2 + sizeof(Mat4);
+	VkDeviceSize bufferSizeA = sizeof(Mat4);
+	VkDeviceSize bufferSizeB = sizeof(Vec4) * objectCount * 3;
 	renderData.objectBuffers.resize(renderData.swapchainImageViews.size());
 	renderData.objectBuffersMemory.resize(renderData.swapchainImageViews.size());
-	renderData.objectBuffersMapped.resize(renderData.swapchainImageViews.size());
+
+	VkBuffer stagingBuffer;
+	VkDeviceMemory stagingBufferMemory;
+	CreateBuffer(bufferSizeB, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+
+	auto sourceData = appData.gm->GetInitialSimulationData();
+	void* data;
+	appData.disp.mapMemory(stagingBufferMemory, 0, bufferSizeB, 0, &data);
+	memcpy(data, sourceData.data(), bufferSizeB);
+	appData.disp.unmapMemory(stagingBufferMemory);
 
 	bool success = true;
 	for (u32 i = 0; i < renderData.swapchainImageViews.size(); i++)
 	{
-		success &= CreateBuffer(bufferSize,
+		success &= CreateBuffer(bufferSizeA,
 								VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
 								VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 								renderData.objectBuffers[i],
 								renderData.objectBuffersMemory[i]);
+
+		success &= CreateBuffer(bufferSizeB,
+								VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+								VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+								renderData.computeBuffers[i],
+								renderData.computeBuffersMemory[i]);
+
+		CopyBuffer(stagingBuffer, renderData.computeBuffers[i], bufferSizeB);
 	
 		success &= appData.disp.mapMemory(	renderData.objectBuffersMemory[i],
 											0,
-											bufferSize,
+											bufferSizeA,
 											0,
 											reinterpret_cast<void**>(&renderData.objectBuffersMapped[i])) == VK_SUCCESS;
 	}
+
 	return success;
 }
 
@@ -1269,9 +1297,9 @@ bool RenderThread::CreateDescriptorSets()
 		bufferInfo0.range = sizeof(Mat4);
 
 		VkDescriptorBufferInfo bufferInfo1 = {};
-		bufferInfo1.buffer = renderData.objectBuffers[i];
-		bufferInfo1.offset = sizeof(Mat4);
-		bufferInfo1.range = sizeof(Vec4) * OBJECT_COUNT * 2;
+		bufferInfo1.buffer = renderData.computeBuffers[i];
+		bufferInfo1.offset = 0;
+		bufferInfo1.range = sizeof(Vec4) * OBJECT_COUNT * 3;
 
 		VkDescriptorImageInfo imageInfo0 = {};
 		imageInfo0.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -1364,11 +1392,6 @@ bool RenderThread::UpdateUniformBuffer(u32 image)
 	{
 		dataPtr[i] = matPtr[i];
 	}
-
-	const auto& data = appData.gm->GetSimulationData();
-	if (data.size() < OBJECT_COUNT * 2)
-		return true;
-	std::copy(data.data(), data.data() + OBJECT_COUNT * 2, dataPtr + 4);
 
 	return true;
 }

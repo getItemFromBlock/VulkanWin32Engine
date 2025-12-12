@@ -1541,7 +1541,7 @@ Result<uint32_t> Device::get_queue_index(QueueType type) const {
             if (index == detail::QUEUE_INDEX_MAX_VALUE) return Result<uint32_t>{ QueueError::present_unavailable };
             break;
         case QueueType::graphics:
-            index = detail::get_first_queue_index(queue_families, VK_QUEUE_GRAPHICS_BIT);
+            index = detail::get_first_queue_index(queue_families, VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT);
             if (index == detail::QUEUE_INDEX_MAX_VALUE) return Result<uint32_t>{ QueueError::graphics_unavailable };
             break;
         case QueueType::compute:

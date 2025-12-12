@@ -12,6 +12,8 @@
 #include "Maths/Maths.hpp"
 
 const u32 OBJECT_COUNT = 500;
+const u32 WORLD_SIZE = 500;
+
 const u32 CELL_SIZE = 64;
 const u32 BOID_CHUNK = 512;
 const float BOID_DIST_MAX = 64.0f;
@@ -48,7 +50,7 @@ public:
 	void MoveMouse(Maths::Vec2 delta);
 	void SetKeyState(u8 key, u8 scanCode, bool state);
 	void SendWindowMessage(WindowMessage msg, u64 payload = 0);
-	const std::vector<Maths::Vec4> &GetSimulationData() const;
+	std::vector<Maths::Vec4> GetInitialSimulationData();
 	const Maths::Mat4 &GetViewProjectionMatrix() const;
 
 	static void SendErrorPopup(const std::wstring &err);
@@ -112,6 +114,7 @@ private:
 	void PostUpdate(float deltaTime);
 	void UpdateBuffers(const Maths::Mat4 &mat);
 	float NextFloat01();
+	Maths::Vec3 NextUnitVector();
 	s32 GetCell(Maths::IVec2 pos, Maths::IVec2 &dt);
 	void ThreadPoolFunc();
 	bool ThreadPoolUpdate();

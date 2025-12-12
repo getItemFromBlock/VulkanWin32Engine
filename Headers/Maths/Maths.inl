@@ -1146,6 +1146,11 @@ namespace Maths
 		return operator*(Vec3(0, 0, 1));
 	}
 
+	inline Vec4 Quat::ToVec4() const
+	{
+		return Vec4(v, a);
+	}
+
 	Quat Quat::Slerp(const Quat& a, Quat b, f32 alpha)
 	{
 		Quat result = Quat();

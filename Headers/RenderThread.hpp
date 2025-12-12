@@ -70,6 +70,9 @@ struct RenderData
 	std::vector<VkDeviceMemory> objectBuffersMemory;
 	std::vector<Maths::Vec4*> objectBuffersMapped;
 
+	std::vector<VkBuffer> computeBuffers;
+	std::vector<VkDeviceMemory> computeBuffersMemory;
+
 	VkBuffer vertexBuffer;
 	VkDeviceMemory vertexBufferMemory;
 	VkDescriptorSetLayout descriptorSetLayout;
@@ -150,7 +153,7 @@ private:
 	bool CreateTextureSampler();
 	bool CreateDepthResources();
 	bool CreateVertexBuffer(const Resource::Mesh &m);
-	bool CreateObjectBuffer(const u32 objectCount);
+	bool CreateObjectBuffers(const u32 objectCount);
 	bool CreateCommandBuffers();
 	bool CreateSyncObjects();
     bool CreateDescriptorPool();

@@ -31,6 +31,11 @@ float GameThread::NextFloat01()
 	return rand() / static_cast<float>(RAND_MAX);
 }
 
+Maths::Vec3 GameThread::NextUnitVector()
+{
+	return (Vec3(NextFloat01(), NextFloat01(), NextFloat01()) * 2 - 1).Normalize();
+}
+
 void GameThread::Init(HWND hwnd, u32 customMsg, Maths::IVec2 resIn, bool isUnit)
 {
 	isUnitTest = isUnit;
@@ -148,6 +153,7 @@ void GameThread::InitThread()
 	SetThreadDescription(GetCurrentThread(), L"Game Thread");
 	std::chrono::time_point<std::chrono::system_clock> now = std::chrono::system_clock::now();
 	start = now.time_since_epoch();
+	/*
 	srand((u32)(std::chrono::duration_cast<std::chrono::milliseconds>(start).count()));
 
 	positions.resize(OBJECT_COUNT);
@@ -171,6 +177,7 @@ void GameThread::InitThread()
 	{
 		threadPool[i] = std::thread(&GameThread::ThreadPoolFunc, this);
 	}
+	*/
 }
 
 s32 GameThread::GetCell(Maths::IVec2 pos, Maths::IVec2 &dt)
@@ -263,6 +270,7 @@ void GameThread::PostUpdate(float deltaTime)
 
 void GameThread::UpdateBuffers(const Mat4 &mat)
 {
+	/*
 	auto &buf = currentBuf ? bufferA : bufferB;
 	for (u32 i = 0; i < OBJECT_COUNT; i++)
 	{
@@ -273,16 +281,25 @@ void GameThread::UpdateBuffers(const Mat4 &mat)
 		buf[i*2] = Vec4(positions[i].x/10, 0, positions[i].y/10, 0);
 		buf[i*2+1] = Vec4(rot.v, rot.a);
 	}
-	
+	*/
 	auto &matRef = currentBuf ? vpA : vpB;
 	matRef = mat.TransposeMatrix();
 
 	currentBuf = !currentBuf;
 }
 
-const std::vector<Maths::Vec4> &GameThread::GetSimulationData() const
+std::vector<Maths::Vec4> GameThread::GetInitialSimulationData()
 {
-	return currentBuf ? bufferB : bufferA;
+	std::vector<Vec4> initialData = std::vector<Vec4>(OBJECT_COUNT * 3);
+	srand((u32)(std::chrono::duration_cast<std::chrono::milliseconds>(start).count()));
+
+	for (u32 i = 0; i < OBJECT_COUNT; i++)
+	{
+		initialData[i*3] = Vec4(NextFloat01() * WORLD_SIZE, NextFloat01() * WORLD_SIZE, NextFloat01() * WORLD_SIZE, 0);
+		initialData[i*3+1] = Vec4(NextUnitVector(), 0) * BOID_MAX_SPEED * 0.2f;
+		initialData[i*3+2] = Quat::AxisAngle(NextUnitVector(), NextFloat01() * M_PI * 2).ToVec4();
+	}
+	return initialData;
 }
 
 const Maths::Mat4 & GameThread::GetViewProjectionMatrix() const
@@ -485,13 +502,14 @@ void GameThread::ThreadFunc()
 		// Hard cap movement to 30 fps so that deltatime does not gets too big
 		if (deltaTime > 0.033f)
 			deltaTime = 0.033f;
-
+		/*
 		if (appTime > 1)
 		{
 			PreUpdate();
 			Update(deltaTime);
 			PostUpdate(deltaTime);
 		}
+		*/
 		//else
 			std::this_thread::sleep_for(std::chrono::milliseconds(5));
 		
@@ -500,12 +518,13 @@ void GameThread::ThreadFunc()
 		if (isUnitTest && appTime > 10.0f)
 			SendWindowMessage(EXIT_WINDOW);
 	}
-
+	/*
 	poolExit = true;
 	for (u32 i = 0; i < threadPool.size(); i++)
 	{
 		threadPool[i].join();
 	}
+	*/
 }
 
 bool GameThread::ThreadPoolUpdate()

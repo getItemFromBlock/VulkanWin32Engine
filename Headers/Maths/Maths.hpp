@@ -679,6 +679,8 @@ namespace Maths
 
 		inline Vec3 GetFront() const;
 
+		inline Vec4 ToVec4() const;
+
 		inline static Quat Slerp(const Quat& a, Quat b, f32 alpha);
 #ifdef JOLT_API
 		inline Quat(const JPH::QuatArg& input) : v(input.GetX(), input.GetY(), input.GetZ()), a(input.GetW()) {}
