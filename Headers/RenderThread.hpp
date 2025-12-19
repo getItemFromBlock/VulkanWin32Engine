@@ -88,6 +88,10 @@ struct RenderData
 	VkImageView textureImageView;
 	VkSampler textureSampler;
 
+	u32 mainBufSize = 0;
+	u32 sizeObjects = 0;
+	u32 sizeSortBuf = 0;
+	u32 sizeMergeBuf = 0;
 	u32 currentFrame = 0;
 };
 
@@ -153,7 +157,7 @@ private:
 	bool CreateTextureSampler();
 	bool CreateDepthResources();
 	bool CreateVertexBuffer(const Resource::Mesh &m);
-	bool CreateObjectBuffers(const u32 objectCount);
+	bool CreateObjectBuffers(u32 objectCount);
 	bool CreateCommandBuffers();
 	bool CreateSyncObjects();
     bool CreateDescriptorPool();

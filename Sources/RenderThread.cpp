@@ -142,7 +142,7 @@ bool RenderThread::InitVulkan(u32 targetDevice)
 			CreateTextureImageView() &&
 			CreateTextureSampler() &&
 			CreateVertexBuffer(sceneData.mesh) &&
-			CreateObjectBuffer(OBJECT_COUNT) &&
+			CreateObjectBuffers(OBJECT_COUNT) &&
 			CreateDescriptorPool() &&
 			CreateDescriptorSets() &&
 			CreateCommandBuffers() &&
@@ -539,35 +539,24 @@ bool RenderThread::CreateDescriptorSetLayout()
 	samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 	samplerLayoutBinding.pImmutableSamplers = nullptr;
 
-	VkDescriptorSetLayoutBinding computeLayoutBinding = {};
-	computeLayoutBinding.binding = 0;
-	computeLayoutBinding.descriptorCount = 1;
-	computeLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	computeLayoutBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT;
-	computeLayoutBinding.pImmutableSamplers = nullptr;
+	VkDescriptorSetLayoutBinding computeLayoutBinding0 = {};
+	computeLayoutBinding0.binding = 0;
+	computeLayoutBinding0.descriptorCount = 1;
+	computeLayoutBinding0.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	computeLayoutBinding0.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT;
+	computeLayoutBinding0.pImmutableSamplers = nullptr;
 
-	/*
-	* 
-	* n cells
-
-buffer size: align(n*n*m0) + align(n*m1) + align()
-
-sort 0
-	n kernels, each kernel has its list of cells
-sort merge
-	n kernels, merge per cell
-
-sim 0 (new vel)
-sim 1 (apply vel)
-render
-
-	* 
-	* */
+	VkDescriptorSetLayoutBinding computeLayoutBinding1 = {};
+	computeLayoutBinding1.binding = 0;
+	computeLayoutBinding1.descriptorCount = 1;
+	computeLayoutBinding1.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	computeLayoutBinding1.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT;
+	computeLayoutBinding1.pImmutableSamplers = nullptr;
 
 	VkDescriptorSetLayoutCreateInfo layoutInfo = {};
 	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	layoutInfo.bindingCount = 3;
-	VkDescriptorSetLayoutBinding bindings[3] = { uboLayoutBinding, objectLayoutBinding, samplerLayoutBinding };
+	layoutInfo.bindingCount = 5;
+	VkDescriptorSetLayoutBinding bindings[5] = { uboLayoutBinding, objectLayoutBinding, samplerLayoutBinding, computeLayoutBinding0, computeLayoutBinding1 };
 	layoutInfo.pBindings = bindings;
 	
 	if (appData.disp.createDescriptorSetLayout(&layoutInfo, nullptr, &renderData.descriptorSetLayout) != VK_SUCCESS)
@@ -745,10 +734,20 @@ bool RenderThread::CreateGraphicsPipeline()
 	return true;
 }
 
-bool RenderThread::CreateObjectBuffers(const u32 objectCount)
+u32 align(unsigned int x, unsigned int a)
+{
+	unsigned int r = x%a;
+	return r? x + (a - r) : x;
+}
+
+bool RenderThread::CreateObjectBuffers(u32 objectCount)
 {
 	VkDeviceSize bufferSizeA = sizeof(Mat4);
-	VkDeviceSize bufferSizeB = sizeof(Vec4) * objectCount * 3;
+	renderData.sizeObjects = align(sizeof(Vec4) * objectCount * 3, 0x40);
+	renderData.sizeSortBuf = align(SORT_THREAD_COUNT * CHUNK_COUNT * (OBJECT_COUNT / SORT_THREAD_COUNT) * sizeof(u32), 0x40);
+	renderData.sizeMergeBuf = align(MAX_OBJECTS_PER_CHUNK * CHUNK_COUNT * sizeof(u32), 0x40);
+	renderData.mainBufSize = renderData.sizeObjects + renderData.sizeSortBuf + renderData.sizeMergeBuf;
+	VkDeviceSize bufferSizeB = renderData.mainBufSize;
 	renderData.objectBuffers.resize(renderData.swapchainImageViews.size());
 	renderData.objectBuffersMemory.resize(renderData.swapchainImageViews.size());
 
@@ -1315,20 +1314,35 @@ bool RenderThread::CreateDescriptorSets()
 
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
-		VkDescriptorBufferInfo bufferInfo0 = {};
-		bufferInfo0.buffer = renderData.objectBuffers[i];
-		bufferInfo0.offset = 0;
-		bufferInfo0.range = sizeof(Mat4);
+		VkDescriptorBufferInfo bufferInfo = {};
+		bufferInfo.buffer = renderData.objectBuffers[i];
+		bufferInfo.offset = 0;
+		bufferInfo.range = sizeof(Mat4);
 
-		VkDescriptorBufferInfo bufferInfo1 = {};
-		bufferInfo1.buffer = renderData.computeBuffers[i];
-		bufferInfo1.offset = 0;
-		bufferInfo1.range = sizeof(Vec4) * OBJECT_COUNT * 3;
+		VkDescriptorBufferInfo bufferInfoLast = {};
+		bufferInfoLast.buffer = renderData.computeBuffers[(i + MAX_FRAMES_IN_FLIGHT - 1) % MAX_FRAMES_IN_FLIGHT];
+		bufferInfoLast.offset = 0;
+		bufferInfoLast.range = renderData.sizeObjects;
 
-		VkDescriptorImageInfo imageInfo0 = {};
-		imageInfo0.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		imageInfo0.imageView = renderData.textureImageView;
-		imageInfo0.sampler = renderData.textureSampler;
+		VkDescriptorBufferInfo bufferInfoObjects = {};
+		bufferInfoObjects.buffer = renderData.computeBuffers[i];
+		bufferInfoObjects.offset = 0;
+		bufferInfoObjects.range = renderData.sizeObjects;
+
+		VkDescriptorBufferInfo bufferInfoMerge = {};
+		bufferInfoMerge.buffer = renderData.computeBuffers[i];
+		bufferInfoMerge.offset = renderData.sizeObjects;
+		bufferInfoMerge.range = renderData.sizeMergeBuf;
+
+		VkDescriptorBufferInfo bufferInfoSort = {};
+		bufferInfoSort.buffer = renderData.computeBuffers[i];
+		bufferInfoSort.offset = renderData.sizeObjects + renderData.sizeMergeBuf;
+		bufferInfoSort.range = renderData.sizeSortBuf;
+
+		VkDescriptorImageInfo imageInfo = {};
+		imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		imageInfo.imageView = renderData.textureImageView;
+		imageInfo.sampler = renderData.textureSampler;
 
 		VkWriteDescriptorSet descriptorWrite0 = {};
 		descriptorWrite0.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -1337,7 +1351,7 @@ bool RenderThread::CreateDescriptorSets()
 		descriptorWrite0.dstArrayElement = 0;
 		descriptorWrite0.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		descriptorWrite0.descriptorCount = 1;
-		descriptorWrite0.pBufferInfo = &bufferInfo0;
+		descriptorWrite0.pBufferInfo = &bufferInfo;
 		descriptorWrite0.pImageInfo = nullptr; // Optional
 		descriptorWrite0.pTexelBufferView = nullptr; // Optional
 
