@@ -1,0 +1,51 @@
+#version 450
+
+#include "shaderSimData.h"
+
+struct Object {
+    vec3 position;
+	float padding0;
+    vec3 velocity;
+	float padding1;
+	vec3 accel;
+	float padding2;
+    vec4 rotation;
+};
+
+layout(std140, binding = 0) readonly buffer Sorted0 {
+    uint lists[];
+};
+
+layout(std140, binding = 1) buffer Sorted1 {
+    uint sorted[];
+};
+
+void main()
+{
+	uint index = gl_GlobalInvocationID.x + ((gl_GlobalInvocationID.z * CHUNK_COUNT_SIDE) + gl_GlobalInvocationID.y) * CHUNK_COUNT_SIDE;
+	uint bufferOffset = MAX_OBJECTS_PER_CHUNK * index;
+	
+	uint mergeCount = 0;
+	
+    for (uint i = 0; i < SORT_THREAD_COUNT; i++)
+	{
+		uint offset = SORT_THREAD_OBJECT_PER_CHUNK * CHUNK_COUNT * i + SORT_THREAD_OBJECT_PER_CHUNK * index;
+		uint chunkCount = lists[offset];
+		
+		for (uint j = 0; j < chunkCount; j++)
+		{
+			uint id = lists[offset + j];
+			if (id >= OBJECT_COUNT) // invalid id?
+				break;
+			mergeCount++;
+			sorted[bufferOffset + mergeCount] = id;
+			if (mergeCount >= MAX_OBJECTS_PER_CHUNK)
+				break;
+		}
+		if (mergeCount >= MAX_OBJECTS_PER_CHUNK)
+			break;
+	}
+	
+	// Each chunk buffer has an extra value at the start holding how much objects are stored in it.
+	sorted[bufferOffset] = mergeCount;
+}

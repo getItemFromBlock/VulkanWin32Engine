@@ -55,6 +55,8 @@ struct RenderData
 	VkRenderPass renderPass;
 	VkPipelineLayout pipelineLayout;
 	VkPipeline graphicsPipeline;
+	VkPipelineLayout computePipelineLayout;
+	VkPipeline computePipelines[4];
 
 	VkCommandPool commandPool;
 	VkCommandPool transfertCommandPool;
@@ -75,7 +77,8 @@ struct RenderData
 
 	VkBuffer vertexBuffer;
 	VkDeviceMemory vertexBufferMemory;
-	VkDescriptorSetLayout descriptorSetLayout;
+	VkDescriptorSetLayout descriptorSetLayoutCompute;
+	VkDescriptorSetLayout descriptorSetLayoutRender;
 	VkDescriptorPool descriptorPool;
 	std::vector<VkDescriptorSet> descriptorSets;
 
@@ -147,8 +150,9 @@ private:
 	bool CreateSwapchain();
 	bool GetQueues();
 	bool CreateRenderPass();
-	bool CreateDescriptorSetLayout();
+	bool CreateDescriptorSetLayouts();
 	bool CreateGraphicsPipeline();
+	bool CreateComputePipeline();
 	bool CreateFramebuffers();
 	bool CreateCommandPool();
 	bool CreateTextureImage();

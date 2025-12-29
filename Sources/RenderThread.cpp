@@ -133,7 +133,7 @@ bool RenderThread::InitVulkan(u32 targetDevice)
 			CreateSwapchain() &&
 			GetQueues() &&
 			CreateRenderPass() &&
-			CreateDescriptorSetLayout() &&
+			CreateDescriptorSetLayouts() &&
 			CreateGraphicsPipeline() &&
 			CreateDepthResources() &&
 			CreateFramebuffers() &&
@@ -516,7 +516,7 @@ std::array<VkVertexInputAttributeDescription, 4> RenderThread::GetAttributeDescr
 	return attributeDescriptions;
 }
 
-bool RenderThread::CreateDescriptorSetLayout()
+bool RenderThread::CreateDescriptorSetLayouts()
 {
 	VkDescriptorSetLayoutBinding uboLayoutBinding = {};
 	uboLayoutBinding.binding = 0;
@@ -538,28 +538,35 @@ bool RenderThread::CreateDescriptorSetLayout()
 	samplerLayoutBinding.descriptorCount = 1;
 	samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 	samplerLayoutBinding.pImmutableSamplers = nullptr;
-
+	
 	VkDescriptorSetLayoutBinding computeLayoutBinding0 = {};
 	computeLayoutBinding0.binding = 0;
 	computeLayoutBinding0.descriptorCount = 1;
-	computeLayoutBinding0.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	computeLayoutBinding0.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT;
+	computeLayoutBinding0.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	computeLayoutBinding0.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 	computeLayoutBinding0.pImmutableSamplers = nullptr;
 
 	VkDescriptorSetLayoutBinding computeLayoutBinding1 = {};
-	computeLayoutBinding1.binding = 0;
+	computeLayoutBinding1.binding = 1;
 	computeLayoutBinding1.descriptorCount = 1;
-	computeLayoutBinding1.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	computeLayoutBinding1.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT;
+	computeLayoutBinding1.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	computeLayoutBinding1.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 	computeLayoutBinding1.pImmutableSamplers = nullptr;
 
-	VkDescriptorSetLayoutCreateInfo layoutInfo = {};
-	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	layoutInfo.bindingCount = 5;
-	VkDescriptorSetLayoutBinding bindings[5] = { uboLayoutBinding, objectLayoutBinding, samplerLayoutBinding, computeLayoutBinding0, computeLayoutBinding1 };
-	layoutInfo.pBindings = bindings;
+	VkDescriptorSetLayoutCreateInfo layoutInfoCompute = {};
+	layoutInfoCompute.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layoutInfoCompute.bindingCount = 2;
+	VkDescriptorSetLayoutBinding bindings0[2] = { computeLayoutBinding0, computeLayoutBinding1 };
+	layoutInfoCompute.pBindings = bindings0;
+
+	VkDescriptorSetLayoutCreateInfo layoutInfoRender = {};
+	layoutInfoRender.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layoutInfoRender.bindingCount = 3;
+	VkDescriptorSetLayoutBinding bindings1[3] = { uboLayoutBinding, objectLayoutBinding, samplerLayoutBinding };
+	layoutInfoRender.pBindings = bindings1;
 	
-	if (appData.disp.createDescriptorSetLayout(&layoutInfo, nullptr, &renderData.descriptorSetLayout) != VK_SUCCESS)
+	if (appData.disp.createDescriptorSetLayout(&layoutInfoCompute, nullptr, &renderData.descriptorSetLayoutCompute) != VK_SUCCESS ||
+		appData.disp.createDescriptorSetLayout(&layoutInfoRender, nullptr, &renderData.descriptorSetLayoutRender) != VK_SUCCESS)
 	{
 		GameThread::SendErrorPopup("failed to create descriptor set layout");
 		return false;
@@ -571,14 +578,12 @@ bool RenderThread::CreateDescriptorSetLayout()
 bool RenderThread::CreateGraphicsPipeline()
 {
 	const std::filesystem::path defaultPath = std::filesystem::current_path();
-	std::string vertCode = LoadFile(std::filesystem::path(defaultPath).append("Assets/Shaders/triangle.vert.spv").string());
-	std::string fragCode = LoadFile(std::filesystem::path(defaultPath).append("Assets/Shaders/triangle.frag.spv").string());
-	std::string compCode = LoadFile(std::filesystem::path(defaultPath).append("Assets/Shaders/compute.comp.spv").string());
+	std::string vertCode = LoadFile(std::filesystem::path(defaultPath).append("Assets/Shaders/cube.vert.spv").string());
+	std::string fragCode = LoadFile(std::filesystem::path(defaultPath).append("Assets/Shaders/cube.frag.spv").string());
 
 	VkShaderModule vertModule = CreateShaderModule(vertCode);
 	VkShaderModule fragModule = CreateShaderModule(fragCode);
-	VkShaderModule compModule = CreateShaderModule(compCode);
-	if (vertModule == VK_NULL_HANDLE || fragModule == VK_NULL_HANDLE || compModule == VK_NULL_HANDLE)
+	if (vertModule == VK_NULL_HANDLE || fragModule == VK_NULL_HANDLE)
 	{
 		GameThread::SendErrorPopup("failed to create shader module");
 		return false;
@@ -596,13 +601,7 @@ bool RenderThread::CreateGraphicsPipeline()
 	fragStageInfo.module = fragModule;
 	fragStageInfo.pName = "main";
 
-	VkPipelineShaderStageCreateInfo compStageInfo = {};
-	compStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-	compStageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-	compStageInfo.module = compModule;
-	compStageInfo.pName = "main";
-
-	VkPipelineShaderStageCreateInfo shaderStages[] = { vertStageInfo, fragStageInfo, compStageInfo };
+	VkPipelineShaderStageCreateInfo shaderStages[] = { vertStageInfo, fragStageInfo };
 
 	auto bindingDescription = GetBindingDescription();
 	auto attributeDescriptions = GetAttributeDescriptions();
@@ -690,7 +689,7 @@ bool RenderThread::CreateGraphicsPipeline()
 	VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
 	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 	pipelineLayoutInfo.setLayoutCount = 1;
-	pipelineLayoutInfo.pSetLayouts = &renderData.descriptorSetLayout;
+	pipelineLayoutInfo.pSetLayouts = &renderData.descriptorSetLayoutRender;
 	pipelineLayoutInfo.pushConstantRangeCount = 0;
 
 	if (appData.disp.createPipelineLayout(&pipelineLayoutInfo, nullptr, &renderData.pipelineLayout) != VK_SUCCESS)
@@ -708,7 +707,7 @@ bool RenderThread::CreateGraphicsPipeline()
 
 	VkGraphicsPipelineCreateInfo pipelineInfo = {};
 	pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-	pipelineInfo.stageCount = 3;
+	pipelineInfo.stageCount = 2;
 	pipelineInfo.pStages = shaderStages;
 	pipelineInfo.pVertexInputState = &vertexInputInfo;
 	pipelineInfo.pInputAssemblyState = &inputAssembly;
@@ -734,17 +733,72 @@ bool RenderThread::CreateGraphicsPipeline()
 	return true;
 }
 
+bool RenderThread::CreateComputePipeline()
+{
+	const std::filesystem::path defaultPath = std::filesystem::current_path();
+	std::string compCodeSort0 = LoadFile(std::filesystem::path(defaultPath).append("Assets/Shaders/sort0.comp.spv").string());
+	std::string compCodeSort1 = LoadFile(std::filesystem::path(defaultPath).append("Assets/Shaders/sort1.comp.spv").string());
+	std::string compCodeSim0 = LoadFile(std::filesystem::path(defaultPath).append("Assets/Shaders/sim0.comp.spv").string());
+	std::string compCodeSim1 = LoadFile(std::filesystem::path(defaultPath).append("Assets/Shaders/sim1.comp.spv").string());
+
+	VkShaderModule compModuleSort0 = CreateShaderModule(compCodeSort0);
+	VkShaderModule compModuleSort1 = CreateShaderModule(compCodeSort1);
+	VkShaderModule compModuleSim0 = CreateShaderModule(compCodeSim0);
+	VkShaderModule compModuleSim1 = CreateShaderModule(compCodeSim1);
+	if (compModuleSort0 == VK_NULL_HANDLE || compModuleSort1 == VK_NULL_HANDLE || compModuleSim0 == VK_NULL_HANDLE || compModuleSim1 == VK_NULL_HANDLE)
+	{
+		GameThread::SendErrorPopup("failed to create compute shader module");
+		return false;
+	}
+
+
+	VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
+	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	pipelineLayoutInfo.setLayoutCount = 1;
+	pipelineLayoutInfo.pSetLayouts = &renderData.descriptorSetLayoutCompute;
+
+	if (appData.disp.createPipelineLayout(&pipelineLayoutInfo, nullptr, &renderData.computePipelineLayout) != VK_SUCCESS)
+	{
+		GameThread::SendErrorPopup("failed to create compute pipeline layout!");
+		return false;
+	}
+
+	VkShaderModule modules[4] = {compModuleSort0, compModuleSort1, compModuleSim0, compModuleSim1};
+	VkPipelineShaderStageCreateInfo compStageInfo[4] = {};
+	VkComputePipelineCreateInfo pipelineInfo[4] = {};
+
+	for (u32 i = 0; i < 4; i++)
+	{
+		compStageInfo[i].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		compStageInfo[i].stage = VK_SHADER_STAGE_COMPUTE_BIT;
+		compStageInfo[i].module = modules[i];
+		compStageInfo[i].pName = "main";
+
+		pipelineInfo[i].sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+		pipelineInfo[i].layout = renderData.computePipelineLayout;
+		pipelineInfo[i].stage = compStageInfo[i];
+	}
+
+	if (appData.disp.createComputePipelines(VK_NULL_HANDLE, 4, pipelineInfo, nullptr, renderData.computePipelines) != VK_SUCCESS)
+	{
+		GameThread::SendErrorPopup("failed to create compute pipelines!");
+		return false;
+	}
+
+	return true;
+}
+
 u32 align(unsigned int x, unsigned int a)
 {
-	unsigned int r = x%a;
-	return r? x + (a - r) : x;
+	unsigned int r = x % a;
+	return r ? x + (a - r) : x;
 }
 
 bool RenderThread::CreateObjectBuffers(u32 objectCount)
 {
 	VkDeviceSize bufferSizeA = sizeof(Mat4);
-	renderData.sizeObjects = align(sizeof(Vec4) * objectCount * 3, 0x40);
-	renderData.sizeSortBuf = align(SORT_THREAD_COUNT * CHUNK_COUNT * (OBJECT_COUNT / SORT_THREAD_COUNT) * sizeof(u32), 0x40);
+	renderData.sizeObjects = align(sizeof(Vec4) * objectCount * 4, 0x40);
+	renderData.sizeSortBuf = align(SORT_THREAD_COUNT * CHUNK_COUNT * SORT_THREAD_OBJECT_PER_CHUNK * sizeof(u32), 0x40);
 	renderData.sizeMergeBuf = align(MAX_OBJECTS_PER_CHUNK * CHUNK_COUNT * sizeof(u32), 0x40);
 	renderData.mainBufSize = renderData.sizeObjects + renderData.sizeSortBuf + renderData.sizeMergeBuf;
 	VkDeviceSize bufferSizeB = renderData.mainBufSize;
@@ -1298,7 +1352,7 @@ bool RenderThread::CreateDescriptorPool()
 
 bool RenderThread::CreateDescriptorSets()
 {
-	std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, renderData.descriptorSetLayout);
+	std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, renderData.descriptorSetLayoutRender);
 	VkDescriptorSetAllocateInfo allocInfo = {};
 	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 	allocInfo.descriptorPool = renderData.descriptorPool;
@@ -1362,21 +1416,54 @@ bool RenderThread::CreateDescriptorSets()
 		descriptorWrite1.dstArrayElement = 0;
 		descriptorWrite1.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 		descriptorWrite1.descriptorCount = 1;
-		descriptorWrite1.pBufferInfo = &bufferInfo1;
+		descriptorWrite1.pBufferInfo = &bufferInfoLast;
 		descriptorWrite1.pImageInfo = nullptr; // Optional
 		descriptorWrite1.pTexelBufferView = nullptr; // Optional
 
 		VkWriteDescriptorSet descriptorWrite2 = {};
 		descriptorWrite2.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptorWrite2.dstSet = renderData.descriptorSets[i];
-		descriptorWrite2.dstBinding = 2;
+		descriptorWrite2.dstBinding = 1;
 		descriptorWrite2.dstArrayElement = 0;
-		descriptorWrite2.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		descriptorWrite2.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 		descriptorWrite2.descriptorCount = 1;
-		descriptorWrite2.pImageInfo = &imageInfo0;
+		descriptorWrite2.pBufferInfo = &bufferInfoLast;
+		descriptorWrite2.pImageInfo = nullptr; // Optional
+		descriptorWrite2.pTexelBufferView = nullptr; // Optional
 
-		VkWriteDescriptorSet descriptorArray[3] = {descriptorWrite0, descriptorWrite1, descriptorWrite2};
-		appData.disp.updateDescriptorSets(3, descriptorArray, 0, nullptr);
+		VkWriteDescriptorSet descriptorWrite3 = {};
+		descriptorWrite3.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptorWrite3.dstSet = renderData.descriptorSets[i];
+		descriptorWrite3.dstBinding = 1;
+		descriptorWrite3.dstArrayElement = 0;
+		descriptorWrite3.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+		descriptorWrite3.descriptorCount = 1;
+		descriptorWrite3.pBufferInfo = &bufferInfoLast;
+		descriptorWrite3.pImageInfo = nullptr; // Optional
+		descriptorWrite3.pTexelBufferView = nullptr; // Optional
+
+		VkWriteDescriptorSet descriptorWrite4 = {};
+		descriptorWrite4.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptorWrite4.dstSet = renderData.descriptorSets[i];
+		descriptorWrite4.dstBinding = 1;
+		descriptorWrite4.dstArrayElement = 0;
+		descriptorWrite4.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+		descriptorWrite4.descriptorCount = 1;
+		descriptorWrite4.pBufferInfo = &bufferInfoLast;
+		descriptorWrite4.pImageInfo = nullptr; // Optional
+		descriptorWrite4.pTexelBufferView = nullptr; // Optional
+
+		VkWriteDescriptorSet descriptorWrite5 = {};
+		descriptorWrite5.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptorWrite5.dstSet = renderData.descriptorSets[i];
+		descriptorWrite5.dstBinding = 2;
+		descriptorWrite5.dstArrayElement = 0;
+		descriptorWrite5.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		descriptorWrite5.descriptorCount = 1;
+		descriptorWrite5.pImageInfo = &imageInfo;
+
+		VkWriteDescriptorSet descriptorArray[6] = {descriptorWrite0, descriptorWrite1, descriptorWrite2, descriptorWrite3, descriptorWrite4, descriptorWrite5};
+		appData.disp.updateDescriptorSets(6, descriptorArray, 0, nullptr);
 	}
 
 	return true;
@@ -1599,7 +1686,8 @@ void RenderThread::Cleanup()
 	appData.disp.destroyRenderPass(renderData.renderPass, nullptr);
 	appData.disp.destroyBuffer(renderData.vertexBuffer, nullptr);
 	appData.disp.destroyDescriptorPool(renderData.descriptorPool, nullptr);
-	appData.disp.destroyDescriptorSetLayout(renderData.descriptorSetLayout, nullptr);
+	appData.disp.destroyDescriptorSetLayout(renderData.descriptorSetLayoutRender, nullptr);
+	appData.disp.destroyDescriptorSetLayout(renderData.descriptorSetLayoutCompute, nullptr);
 	appData.disp.freeMemory(renderData.vertexBufferMemory, nullptr);
 	appData.disp.destroySampler(renderData.textureSampler, nullptr);
 	appData.disp.destroyImageView(renderData.textureImageView, nullptr);

@@ -1,0 +1,61 @@
+#version 450
+
+#include "shaderSimData.h"
+
+struct Object {
+    vec3 position;
+	float padding0;
+    vec3 velocity;
+	float padding1;
+	vec3 accel;
+	float padding2;
+    vec4 rotation;
+};
+
+layout(std140, binding = 0) buffer Objects {
+    Object data[];
+};
+
+layout(std140, binding = 1) readonly buffer LastObjects {
+    Object last[];
+};
+
+// TODO make code to send deltaTime to compute shader instead of hard coding it like an moron
+const float deltaTime = 1/144.0;
+
+void main()
+{
+	uint index = gl_GlobalInvocationID.x + ((gl_GlobalInvocationID.z * CHUNK_COUNT_SIDE) + gl_GlobalInvocationID.y) * CHUNK_COUNT_SIDE;
+	
+	for (uint i = 0; i < OBJECT_UPDATE_COUNT; i++)
+	{
+		const uint id = OBJECT_UPDATE_COUNT * index + i;
+		if (id > OBJECT_COUNT)
+			break;
+		vec3 newVel = data[i].velocity + data[i].accel * deltaTime;
+		float len = length(newVel);
+		if (len > BOID_MAX_SPEED)
+		{
+			newVel = normalize(newVel) * BOID_MAX_SPEED;
+		}
+		data[i].velocity = newVel;
+		
+		const float size = float(WORLD_SIZE);
+		vec3 newPos = data[i].position + data[i].velocity * deltaTime;
+		if (newPos.x < 0)
+			newPos.x += size;
+		else if (newPos.x >= size)
+			newPos.x -= size;
+		if (newPos.y < 0)
+			newPos.y += size;
+		else if (newPos.y >= size)
+			newPos.y -= size;
+		if (newPos.z < 0)
+			newPos.z += size;
+		else if (newPos.z >= size)
+			newPos.z -= size;
+	
+		data[i].position = newPos;
+		data[i].rotation = vec4(0,0,0,1);
+	}
+}
