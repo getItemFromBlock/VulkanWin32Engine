@@ -135,6 +135,7 @@ bool RenderThread::InitVulkan(u32 targetDevice)
 			CreateRenderPass() &&
 			CreateDescriptorSetLayouts() &&
 			CreateGraphicsPipeline() &&
+			CreateComputePipeline() &&
 			CreateDepthResources() &&
 			CreateFramebuffers() &&
 			CreateCommandPool() &&
@@ -785,6 +786,11 @@ bool RenderThread::CreateComputePipeline()
 		return false;
 	}
 
+	appData.disp.destroyShaderModule(compModuleSort0, nullptr);
+	appData.disp.destroyShaderModule(compModuleSort1, nullptr);
+	appData.disp.destroyShaderModule(compModuleSim0, nullptr);
+	appData.disp.destroyShaderModule(compModuleSim1, nullptr);
+
 	return true;
 }
 
@@ -804,6 +810,9 @@ bool RenderThread::CreateObjectBuffers(u32 objectCount)
 	VkDeviceSize bufferSizeB = renderData.mainBufSize;
 	renderData.objectBuffers.resize(renderData.swapchainImageViews.size());
 	renderData.objectBuffersMemory.resize(renderData.swapchainImageViews.size());
+	renderData.computeBuffers.resize(renderData.swapchainImageViews.size());
+	renderData.computeBuffersMemory.resize(renderData.swapchainImageViews.size());
+	renderData.objectBuffersMapped.resize(renderData.swapchainImageViews.size());
 
 	VkBuffer stagingBuffer;
 	VkDeviceMemory stagingBufferMemory;
@@ -811,8 +820,8 @@ bool RenderThread::CreateObjectBuffers(u32 objectCount)
 
 	auto sourceData = appData.gm->GetInitialSimulationData();
 	void* data;
-	appData.disp.mapMemory(stagingBufferMemory, 0, bufferSizeB, 0, &data);
-	memcpy(data, sourceData.data(), bufferSizeB);
+	appData.disp.mapMemory(stagingBufferMemory, 0, renderData.sizeObjects, 0, &data);
+	memcpy(data, sourceData.data(), renderData.sizeObjects);
 	appData.disp.unmapMemory(stagingBufferMemory);
 
 	bool success = true;
@@ -838,6 +847,9 @@ bool RenderThread::CreateObjectBuffers(u32 objectCount)
 											0,
 											reinterpret_cast<void**>(&renderData.objectBuffersMapped[i])) == VK_SUCCESS;
 	}
+
+	appData.disp.destroyBuffer(stagingBuffer, nullptr);
+	appData.disp.freeMemory(stagingBufferMemory, nullptr);
 
 	return success;
 }
@@ -1223,6 +1235,31 @@ bool RenderThread::CreateCommandBuffers()
 		scissor.offset = { 0, 0 };
 		scissor.extent = appData.swapchain.extent;
 
+		// Sort 0
+		appData.disp.cmdBindPipeline(renderData.commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, renderData.computePipelines[0]);
+		appData.disp.cmdBindDescriptorSets(renderData.commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, renderData.computePipelineLayout, 0, 1, &renderData.computeDescriptorSets[i], 0, 0);
+
+		appData.disp.cmdDispatch(renderData.commandBuffers[i], SORT_THREAD_COUNT, 1, 1);
+
+		// Sort 1
+		appData.disp.cmdBindPipeline(renderData.commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, renderData.computePipelines[1]);
+		appData.disp.cmdBindDescriptorSets(renderData.commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, renderData.computePipelineLayout, 0, 1, &renderData.computeDescriptorSets[i + MAX_FRAMES_IN_FLIGHT], 0, 0);
+
+		appData.disp.cmdDispatch(renderData.commandBuffers[i], CHUNK_COUNT_SIDE, CHUNK_COUNT_SIDE, CHUNK_COUNT_SIDE);
+		
+		// Sim 0
+		appData.disp.cmdBindPipeline(renderData.commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, renderData.computePipelines[2]);
+		appData.disp.cmdBindDescriptorSets(renderData.commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, renderData.computePipelineLayout, 0, 1, &renderData.computeDescriptorSets[i + MAX_FRAMES_IN_FLIGHT * 2], 0, 0);
+
+		appData.disp.cmdDispatch(renderData.commandBuffers[i], CHUNK_COUNT_SIDE, CHUNK_COUNT_SIDE, CHUNK_COUNT_SIDE);
+
+		// Sim 1
+		appData.disp.cmdBindPipeline(renderData.commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, renderData.computePipelines[3]);
+		appData.disp.cmdBindDescriptorSets(renderData.commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, renderData.computePipelineLayout, 0, 1, &renderData.computeDescriptorSets[i + MAX_FRAMES_IN_FLIGHT * 3], 0, 0);
+
+		appData.disp.cmdDispatch(renderData.commandBuffers[i], CHUNK_COUNT_SIDE, CHUNK_COUNT_SIDE, CHUNK_COUNT_SIDE);
+
+		// Render
 		appData.disp.cmdSetViewport(renderData.commandBuffers[i], 0, 1, &viewport);
 		appData.disp.cmdSetScissor(renderData.commandBuffers[i], 0, 1, &scissor);
 
@@ -1234,7 +1271,7 @@ bool RenderThread::CreateCommandBuffers()
 		VkDeviceSize offsets[] = { 0 };
 		appData.disp.cmdBindVertexBuffers(renderData.commandBuffers[i], 0, 1, vertexBuffers, offsets);
 
-		appData.disp.cmdBindDescriptorSets(renderData.commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, renderData.pipelineLayout, 0, 1, &renderData.descriptorSets[renderData.currentFrame], 0, nullptr);
+		appData.disp.cmdBindDescriptorSets(renderData.commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, renderData.pipelineLayout, 0, 1, &renderData.descriptorSets[i], 0, nullptr);
 
 		appData.disp.cmdDraw(renderData.commandBuffers[i], (u32)(sceneData.mesh.GetVertices().size()), OBJECT_COUNT, 0, 0);
 
@@ -1340,8 +1377,16 @@ bool RenderThread::CreateDescriptorPool()
 	poolInfo.pPoolSizes = pools;
 	poolInfo.maxSets = 256;
 
-	
-	if (appData.disp.createDescriptorPool(&poolInfo, nullptr, &renderData.descriptorPool) != VK_SUCCESS)
+	VkDescriptorPoolSize poolsCompute[2] = {poolSize1, poolSize1};
+	VkDescriptorPoolCreateInfo poolInfoCompute = {};
+	poolInfoCompute.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	poolInfoCompute.poolSizeCount = 2;
+	poolInfoCompute.pPoolSizes = poolsCompute;
+	poolInfoCompute.maxSets = 256;
+
+
+	if (appData.disp.createDescriptorPool(&poolInfo, nullptr, &renderData.descriptorPool) != VK_SUCCESS ||
+		appData.disp.createDescriptorPool(&poolInfoCompute, nullptr, &renderData.descriptorPoolCompute) != VK_SUCCESS)
 	{
 		GameThread::SendErrorPopup("failed to create descriptor pool");
 		return false;
@@ -1359,6 +1404,13 @@ bool RenderThread::CreateDescriptorSets()
 	allocInfo.descriptorSetCount = MAX_FRAMES_IN_FLIGHT;
 	allocInfo.pSetLayouts = layouts.data();
 
+	std::vector<VkDescriptorSetLayout> layoutsCompute(MAX_FRAMES_IN_FLIGHT * 4, renderData.descriptorSetLayoutCompute);
+	VkDescriptorSetAllocateInfo allocInfoCompute = {};
+	allocInfoCompute.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocInfoCompute.descriptorPool = renderData.descriptorPoolCompute;
+	allocInfoCompute.descriptorSetCount = MAX_FRAMES_IN_FLIGHT * 4;
+	allocInfoCompute.pSetLayouts = layoutsCompute.data();
+
 	renderData.descriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
 	if (appData.disp.allocateDescriptorSets(&allocInfo, renderData.descriptorSets.data()) != VK_SUCCESS)
 	{
@@ -1366,12 +1418,19 @@ bool RenderThread::CreateDescriptorSets()
 		return false;
 	}
 
+	renderData.computeDescriptorSets.resize(MAX_FRAMES_IN_FLIGHT*4);
+	if (appData.disp.allocateDescriptorSets(&allocInfoCompute, renderData.computeDescriptorSets.data()) != VK_SUCCESS)
+	{
+		GameThread::SendErrorPopup("failed to allocate descriptor sets");
+		return false;
+	}
+
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
-		VkDescriptorBufferInfo bufferInfo = {};
-		bufferInfo.buffer = renderData.objectBuffers[i];
-		bufferInfo.offset = 0;
-		bufferInfo.range = sizeof(Mat4);
+		VkDescriptorBufferInfo bufferInfoUBO = {};
+		bufferInfoUBO.buffer = renderData.objectBuffers[i];
+		bufferInfoUBO.offset = 0;
+		bufferInfoUBO.range = sizeof(Mat4);
 
 		VkDescriptorBufferInfo bufferInfoLast = {};
 		bufferInfoLast.buffer = renderData.computeBuffers[(i + MAX_FRAMES_IN_FLIGHT - 1) % MAX_FRAMES_IN_FLIGHT];
@@ -1398,72 +1457,29 @@ bool RenderThread::CreateDescriptorSets()
 		imageInfo.imageView = renderData.textureImageView;
 		imageInfo.sampler = renderData.textureSampler;
 
-		VkWriteDescriptorSet descriptorWrite0 = {};
-		descriptorWrite0.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		descriptorWrite0.dstSet = renderData.descriptorSets[i];
-		descriptorWrite0.dstBinding = 0;
-		descriptorWrite0.dstArrayElement = 0;
-		descriptorWrite0.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		descriptorWrite0.descriptorCount = 1;
-		descriptorWrite0.pBufferInfo = &bufferInfo;
-		descriptorWrite0.pImageInfo = nullptr; // Optional
-		descriptorWrite0.pTexelBufferView = nullptr; // Optional
 
-		VkWriteDescriptorSet descriptorWrite1 = {};
-		descriptorWrite1.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		descriptorWrite1.dstSet = renderData.descriptorSets[i];
-		descriptorWrite1.dstBinding = 1;
-		descriptorWrite1.dstArrayElement = 0;
-		descriptorWrite1.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-		descriptorWrite1.descriptorCount = 1;
-		descriptorWrite1.pBufferInfo = &bufferInfoLast;
-		descriptorWrite1.pImageInfo = nullptr; // Optional
-		descriptorWrite1.pTexelBufferView = nullptr; // Optional
+		VkWriteDescriptorSet descriptorWriteUBO = CreateWriteDescriptorSet(renderData.descriptorSets[i], 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, &bufferInfoUBO);
+		VkWriteDescriptorSet descriptorWriteObjects = CreateWriteDescriptorSet(renderData.descriptorSets[i], 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &bufferInfoObjects);
+		VkWriteDescriptorSet descriptorWriteImage = CreateWriteDescriptorSet(renderData.descriptorSets[i], 2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, nullptr, &imageInfo);
 
-		VkWriteDescriptorSet descriptorWrite2 = {};
-		descriptorWrite2.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		descriptorWrite2.dstSet = renderData.descriptorSets[i];
-		descriptorWrite2.dstBinding = 1;
-		descriptorWrite2.dstArrayElement = 0;
-		descriptorWrite2.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-		descriptorWrite2.descriptorCount = 1;
-		descriptorWrite2.pBufferInfo = &bufferInfoLast;
-		descriptorWrite2.pImageInfo = nullptr; // Optional
-		descriptorWrite2.pTexelBufferView = nullptr; // Optional
+		VkWriteDescriptorSet descriptorWriteSort0A = CreateWriteDescriptorSet(renderData.computeDescriptorSets[i], 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &bufferInfoObjects);
+		VkWriteDescriptorSet descriptorWriteSort0B = CreateWriteDescriptorSet(renderData.computeDescriptorSets[i], 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &bufferInfoSort);
 
-		VkWriteDescriptorSet descriptorWrite3 = {};
-		descriptorWrite3.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		descriptorWrite3.dstSet = renderData.descriptorSets[i];
-		descriptorWrite3.dstBinding = 1;
-		descriptorWrite3.dstArrayElement = 0;
-		descriptorWrite3.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-		descriptorWrite3.descriptorCount = 1;
-		descriptorWrite3.pBufferInfo = &bufferInfoLast;
-		descriptorWrite3.pImageInfo = nullptr; // Optional
-		descriptorWrite3.pTexelBufferView = nullptr; // Optional
+		VkWriteDescriptorSet descriptorWriteSort1A = CreateWriteDescriptorSet(renderData.computeDescriptorSets[i + MAX_FRAMES_IN_FLIGHT], 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &bufferInfoSort);
+		VkWriteDescriptorSet descriptorWriteSort1B = CreateWriteDescriptorSet(renderData.computeDescriptorSets[i + MAX_FRAMES_IN_FLIGHT], 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &bufferInfoMerge);
 
-		VkWriteDescriptorSet descriptorWrite4 = {};
-		descriptorWrite4.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		descriptorWrite4.dstSet = renderData.descriptorSets[i];
-		descriptorWrite4.dstBinding = 1;
-		descriptorWrite4.dstArrayElement = 0;
-		descriptorWrite4.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-		descriptorWrite4.descriptorCount = 1;
-		descriptorWrite4.pBufferInfo = &bufferInfoLast;
-		descriptorWrite4.pImageInfo = nullptr; // Optional
-		descriptorWrite4.pTexelBufferView = nullptr; // Optional
+		VkWriteDescriptorSet descriptorWriteSim0A = CreateWriteDescriptorSet(renderData.computeDescriptorSets[i + MAX_FRAMES_IN_FLIGHT * 2], 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &bufferInfoObjects);
+		VkWriteDescriptorSet descriptorWriteSim0B = CreateWriteDescriptorSet(renderData.computeDescriptorSets[i + MAX_FRAMES_IN_FLIGHT * 2], 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &bufferInfoMerge);
 
-		VkWriteDescriptorSet descriptorWrite5 = {};
-		descriptorWrite5.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		descriptorWrite5.dstSet = renderData.descriptorSets[i];
-		descriptorWrite5.dstBinding = 2;
-		descriptorWrite5.dstArrayElement = 0;
-		descriptorWrite5.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		descriptorWrite5.descriptorCount = 1;
-		descriptorWrite5.pImageInfo = &imageInfo;
+		VkWriteDescriptorSet descriptorWriteSim1A = CreateWriteDescriptorSet(renderData.computeDescriptorSets[i + MAX_FRAMES_IN_FLIGHT * 3], 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &bufferInfoObjects);
+		VkWriteDescriptorSet descriptorWriteSim1B = CreateWriteDescriptorSet(renderData.computeDescriptorSets[i + MAX_FRAMES_IN_FLIGHT * 3], 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &bufferInfoLast);
 
-		VkWriteDescriptorSet descriptorArray[6] = {descriptorWrite0, descriptorWrite1, descriptorWrite2, descriptorWrite3, descriptorWrite4, descriptorWrite5};
-		appData.disp.updateDescriptorSets(6, descriptorArray, 0, nullptr);
+		VkWriteDescriptorSet descriptorArray[11] = {descriptorWriteUBO, descriptorWriteObjects, descriptorWriteImage,
+													descriptorWriteSort0A, descriptorWriteSort0B,
+													descriptorWriteSort1A, descriptorWriteSort1B,
+													descriptorWriteSim0A, descriptorWriteSim0B,
+													descriptorWriteSim1A, descriptorWriteSim1B};
+		appData.disp.updateDescriptorSets(11, descriptorArray, 0, nullptr);
 	}
 
 	return true;
@@ -1559,6 +1575,21 @@ VkFormat RenderThread::FindDepthFormat()
 		VK_IMAGE_TILING_OPTIMAL,
 		VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
 	);
+}
+
+VkWriteDescriptorSet RenderThread::CreateWriteDescriptorSet(VkDescriptorSet dstSet, u32 binding, VkDescriptorType type, VkDescriptorBufferInfo * bufferInfo, VkDescriptorImageInfo * imageInfo)
+{
+	VkWriteDescriptorSet result = {};
+	result.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	result.dstSet = dstSet;
+	result.dstBinding = binding;
+	result.dstArrayElement = 0;
+	result.descriptorType = type;
+	result.descriptorCount = 1;
+	result.pBufferInfo = bufferInfo;
+	result.pImageInfo = imageInfo;
+
+	return result;
 }
 
 bool RenderThread::HasStencilComponent(VkFormat format)
@@ -1679,13 +1710,21 @@ void RenderThread::Cleanup()
 	{
 		appData.disp.destroyBuffer(renderData.objectBuffers[i], nullptr);
 		appData.disp.freeMemory(renderData.objectBuffersMemory[i], nullptr);
+		appData.disp.destroyBuffer(renderData.computeBuffers[i], nullptr);
+		appData.disp.freeMemory(renderData.computeBuffersMemory[i], nullptr);
 	}
 
 	appData.disp.destroyPipeline(renderData.graphicsPipeline, nullptr);
+	for (u32 i = 0; i < 4; i++)
+	{
+		appData.disp.destroyPipeline(renderData.computePipelines[i], nullptr);
+	}
 	appData.disp.destroyPipelineLayout(renderData.pipelineLayout, nullptr);
+	appData.disp.destroyPipelineLayout(renderData.computePipelineLayout, nullptr);
 	appData.disp.destroyRenderPass(renderData.renderPass, nullptr);
 	appData.disp.destroyBuffer(renderData.vertexBuffer, nullptr);
 	appData.disp.destroyDescriptorPool(renderData.descriptorPool, nullptr);
+	appData.disp.destroyDescriptorPool(renderData.descriptorPoolCompute, nullptr);
 	appData.disp.destroyDescriptorSetLayout(renderData.descriptorSetLayoutRender, nullptr);
 	appData.disp.destroyDescriptorSetLayout(renderData.descriptorSetLayoutCompute, nullptr);
 	appData.disp.freeMemory(renderData.vertexBufferMemory, nullptr);
@@ -1693,6 +1732,10 @@ void RenderThread::Cleanup()
 	appData.disp.destroyImageView(renderData.textureImageView, nullptr);
 	appData.disp.destroyImage(renderData.textureImage, nullptr);
 	appData.disp.freeMemory(renderData.textureImageMemory, nullptr);
+
+	appData.disp.destroyImageView(renderData.depthImageView, nullptr);
+	appData.disp.destroyImage(renderData.depthImage, nullptr);
+	appData.disp.freeMemory(renderData.depthImageMemory, nullptr);
 
 	appData.swapchain.destroy_image_views(renderData.swapchainImageViews);
 

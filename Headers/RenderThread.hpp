@@ -20,7 +20,7 @@
 
 #include "GameThread.hpp"
 
-const u32 MAX_FRAMES_IN_FLIGHT = 2;
+const u32 MAX_FRAMES_IN_FLIGHT = 3;
 
 struct UBO
 {
@@ -61,6 +61,7 @@ struct RenderData
 	VkCommandPool commandPool;
 	VkCommandPool transfertCommandPool;
 	std::vector<VkCommandBuffer> commandBuffers;
+	std::vector<VkCommandBuffer> computeCommandBuffers;
 	VkCommandBuffer transferCommandBuffer;
 
 	std::vector<VkSemaphore> availableSemaphores;
@@ -80,7 +81,9 @@ struct RenderData
 	VkDescriptorSetLayout descriptorSetLayoutCompute;
 	VkDescriptorSetLayout descriptorSetLayoutRender;
 	VkDescriptorPool descriptorPool;
+	VkDescriptorPool descriptorPoolCompute;
 	std::vector<VkDescriptorSet> descriptorSets;
+	std::vector<VkDescriptorSet> computeDescriptorSets;
 
 	VkImage depthImage;
 	VkDeviceMemory depthImageMemory;
@@ -174,6 +177,7 @@ private:
 	bool UpdateUniformBuffer(u32 image);
 	u32 FindMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties);
 	VkFormat FindDepthFormat();
+	VkWriteDescriptorSet CreateWriteDescriptorSet(VkDescriptorSet dstSet, u32 binding, VkDescriptorType type, VkDescriptorBufferInfo *bufferInfo = nullptr, VkDescriptorImageInfo *imageInfo = nullptr);
 	bool HasStencilComponent(VkFormat format);
 	VkFormat FindSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
 	bool CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);

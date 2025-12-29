@@ -20,6 +20,8 @@ layout(std140, binding = 1) buffer Sorted1 {
     uint sorted[];
 };
 
+layout (local_size_x = CHUNK_COUNT_SIDE, local_size_y = CHUNK_COUNT_SIDE, local_size_z = CHUNK_COUNT_SIDE) in;
+
 void main()
 {
 	uint index = gl_GlobalInvocationID.x + ((gl_GlobalInvocationID.z * CHUNK_COUNT_SIDE) + gl_GlobalInvocationID.y) * CHUNK_COUNT_SIDE;

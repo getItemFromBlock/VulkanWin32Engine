@@ -290,14 +290,15 @@ void GameThread::UpdateBuffers(const Mat4 &mat)
 
 std::vector<Maths::Vec4> GameThread::GetInitialSimulationData()
 {
-	std::vector<Vec4> initialData = std::vector<Vec4>(OBJECT_COUNT * 3);
+	std::vector<Vec4> initialData = std::vector<Vec4>(OBJECT_COUNT * 4);
 	srand((u32)(std::chrono::duration_cast<std::chrono::milliseconds>(start).count()));
 
 	for (u32 i = 0; i < OBJECT_COUNT; i++)
 	{
-		initialData[i*3] = Vec4(NextFloat01() * WORLD_SIZE, NextFloat01() * WORLD_SIZE, NextFloat01() * WORLD_SIZE, 0);
-		initialData[i*3+1] = Vec4(NextUnitVector(), 0) * BOID_MAX_SPEED * 0.2f;
-		initialData[i*3+2] = Quat::AxisAngle(NextUnitVector(), NextFloat01() * M_PI * 2).ToVec4();
+		initialData[i*4] = Vec4(NextFloat01() * WORLD_SIZE, NextFloat01() * WORLD_SIZE, NextFloat01() * WORLD_SIZE, 0);
+		initialData[i*4+1] = Vec4(NextUnitVector(), 0) * BOID_MAX_SPEED * 0.2f;
+		initialData[i*4+2] = Quat::AxisAngle(NextUnitVector(), (float)(NextFloat01() * M_PI * 2)).ToVec4();
+		initialData[i*4+3] = Vec4();
 	}
 	return initialData;
 }
