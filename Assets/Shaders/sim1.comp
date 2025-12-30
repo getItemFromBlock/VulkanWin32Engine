@@ -12,18 +12,18 @@ struct Object {
     vec4 rotation;
 };
 
-layout(std140, binding = 0) buffer Objects {
+layout(binding = 0) buffer Objects {
     Object data[];
 };
 
-layout(std140, binding = 1) readonly buffer LastObjects {
+layout(binding = 1) readonly buffer LastObjects {
     Object last[];
 };
 
 // TODO make code to send deltaTime to compute shader instead of hard coding it like an moron
 const float deltaTime = 1/144.0;
 
-layout (local_size_x = CHUNK_COUNT_SIDE, local_size_y = CHUNK_COUNT_SIDE, local_size_z = CHUNK_COUNT_SIDE) in;
+layout (local_size_x = CHUNK_COUNT_SIDE, local_size_y = CHUNK_COUNT_SIDE, local_size_z = CHUNK_COUNT_SIDE_Z) in;
 
 void main()
 {

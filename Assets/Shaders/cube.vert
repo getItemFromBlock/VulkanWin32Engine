@@ -21,7 +21,7 @@ layout(binding = 0) uniform UniformBufferObject
     mat4 vp;
 } ubo;
 
-layout(std140, binding = 1) readonly buffer ObjectBuffer
+layout(binding = 1) readonly buffer ObjectBuffer
 {
 	Object objects[];
 };
@@ -56,6 +56,8 @@ void main()
 	gl_Position = vec4(dest, 1.0) * ubo.vp;
 
 	fragUV = inUV;
+	//float c = clamp(data.padding2 / 5.0, 0.0, 1.0);
+	//fragColor = vec3(c,c,c);
 	fragColor = inColor;
 	fragNormal = QuatMul(data.rotation, inNormal);
 }

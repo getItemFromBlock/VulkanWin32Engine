@@ -8,6 +8,8 @@ layout (location = 0) out vec4 outColor;
 
 layout(binding = 2) uniform sampler2D texSampler;
 
+const vec3 lightDir = normalize(vec3(0.9,-2,1.1));
+
 void main()
 {
 	//outColor = vec4(fragColor*vec3(fragUV,1.0), 1.0);
@@ -29,5 +31,9 @@ void main()
 	outColor = vec4(fragUV, 1-flip, 1.0);
 	*/
 	vec2 uv = vec2(fragUV.y, -fragUV.x);
-	outColor = vec4(texture(texSampler, uv).xyz, 1.0);
+	vec3 c = texture(texSampler, uv).xyz;
+	
+	float f = clamp(dot(-lightDir,fragNormal),0,1);
+	f = 0.5 + f * 0.7;
+	outColor = vec4(clamp(c*f,0,1), 1.0);
 }

@@ -1263,21 +1263,21 @@ bool RenderThread::CreateCommandBuffers()
 		appData.disp.cmdBindPipeline(renderData.commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, renderData.computePipelines[1]);
 		appData.disp.cmdBindDescriptorSets(renderData.commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, renderData.computePipelineLayout, 0, 1, &renderData.computeDescriptorSets[i + MAX_FRAMES_IN_FLIGHT], 0, 0);
 
-		appData.disp.cmdDispatch(renderData.commandBuffers[i], CHUNK_COUNT_SIDE, CHUNK_COUNT_SIDE, CHUNK_COUNT_SIDE);
+		appData.disp.cmdDispatch(renderData.commandBuffers[i], 1, 1, BLOCK_SIZE_Z);
 		appData.disp.cmdPipelineBarrier2KHR(renderData.commandBuffers[i], &dependencyInfo0);
 
 		// Sim 0
 		appData.disp.cmdBindPipeline(renderData.commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, renderData.computePipelines[2]);
 		appData.disp.cmdBindDescriptorSets(renderData.commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, renderData.computePipelineLayout, 0, 1, &renderData.computeDescriptorSets[i + MAX_FRAMES_IN_FLIGHT * 2], 0, 0);
 
-		appData.disp.cmdDispatch(renderData.commandBuffers[i], CHUNK_COUNT_SIDE, CHUNK_COUNT_SIDE, CHUNK_COUNT_SIDE);
+		appData.disp.cmdDispatch(renderData.commandBuffers[i], 1, 1, BLOCK_SIZE_Z);
 		appData.disp.cmdPipelineBarrier2KHR(renderData.commandBuffers[i], &dependencyInfo0);
 
 		// Sim 1
 		appData.disp.cmdBindPipeline(renderData.commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, renderData.computePipelines[3]);
 		appData.disp.cmdBindDescriptorSets(renderData.commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, renderData.computePipelineLayout, 0, 1, &renderData.computeDescriptorSets[i + MAX_FRAMES_IN_FLIGHT * 3], 0, 0);
 
-		appData.disp.cmdDispatch(renderData.commandBuffers[i], CHUNK_COUNT_SIDE, CHUNK_COUNT_SIDE, CHUNK_COUNT_SIDE);
+		appData.disp.cmdDispatch(renderData.commandBuffers[i], 1, 1, BLOCK_SIZE_Z);
 
 
 		// Render

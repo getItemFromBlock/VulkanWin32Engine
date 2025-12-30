@@ -12,15 +12,15 @@ struct Object {
     vec4 rotation;
 };
 
-layout(std140, binding = 0) readonly buffer Sorted0 {
+layout(binding = 0) readonly buffer Sorted0 {
     uint lists[];
 };
 
-layout(std140, binding = 1) buffer Sorted1 {
+layout(binding = 1) buffer Sorted1 {
     uint sorted[];
 };
 
-layout (local_size_x = CHUNK_COUNT_SIDE, local_size_y = CHUNK_COUNT_SIDE, local_size_z = CHUNK_COUNT_SIDE) in;
+layout (local_size_x = CHUNK_COUNT_SIDE, local_size_y = CHUNK_COUNT_SIDE, local_size_z = CHUNK_COUNT_SIDE_Z) in;
 
 void main()
 {
@@ -41,10 +41,10 @@ void main()
 				break;
 			mergeCount++;
 			sorted[bufferOffset + mergeCount] = id;
-			if (mergeCount >= MAX_OBJECTS_PER_CHUNK)
+			if (mergeCount+1 >= MAX_OBJECTS_PER_CHUNK)
 				break;
 		}
-		if (mergeCount >= MAX_OBJECTS_PER_CHUNK)
+		if (mergeCount+1 >= MAX_OBJECTS_PER_CHUNK)
 			break;
 	}
 	

@@ -12,11 +12,11 @@ struct Object {
     vec4 rotation;
 };
 
-layout(std140, binding = 0) readonly buffer Objects {
+layout(binding = 0) readonly buffer Objects {
     Object data[];
 };
 
-layout(std140, binding = 1) buffer Sorted0 {
+layout(binding = 1) buffer Sorted0 {
     uint lists[];
 };
 
@@ -36,14 +36,14 @@ void main()
     for (uint i = 0; i < SORT_OBJECT_COUNT; i++)
 	{
 		uint id = index * SORT_OBJECT_COUNT + i;
-		if (id >= OBJECT_COUNT)
+		if (id >= OBJECT_COUNT) // invalid id? sus
 			break;
 		ivec3 cPos = ivec3(data[id].position * CHUNK_COUNT_SIDE / WORLD_SIZE);
 		uint flatIndex = cPos.x + ((cPos.z * CHUNK_COUNT_SIDE) + cPos.y) * CHUNK_COUNT_SIDE;
 		
 		uint targetChunk = flatIndex * SORT_THREAD_OBJECT_PER_CHUNK;
 		uint chunkCount = lists[bufferOffset + targetChunk];
-		if (chunkCount >= SORT_THREAD_OBJECT_PER_CHUNK)
+		if (chunkCount+1 >= SORT_THREAD_OBJECT_PER_CHUNK)
 			continue;
 		lists[bufferOffset + targetChunk] = chunkCount + 1;
 		lists[bufferOffset + targetChunk + chunkCount + 1] = id;
