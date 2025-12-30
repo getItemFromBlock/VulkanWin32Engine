@@ -296,9 +296,9 @@ std::vector<Maths::Vec4> GameThread::GetInitialSimulationData()
 	for (u32 i = 0; i < OBJECT_COUNT; i++)
 	{
 		initialData[i*4] = Vec4(NextFloat01() * WORLD_SIZE, NextFloat01() * WORLD_SIZE, NextFloat01() * WORLD_SIZE, 0);
-		initialData[i*4+1] = Vec4(NextUnitVector(), 0) * BOID_MAX_SPEED * 0.2f;
-		initialData[i*4+2] = Quat::AxisAngle(NextUnitVector(), (float)(NextFloat01() * M_PI * 2)).ToVec4();
-		initialData[i*4+3] = Vec4();
+		initialData[i*4+1] = Vec4(NextUnitVector(), 0) * BOID_MAX_SPEED * 0.2f * (1/144.0f);
+		initialData[i*4+2] = Vec4();
+		initialData[i*4+3] = Quat::AxisAngle(NextUnitVector(), (float)(NextFloat01() * M_PI * 2)).ToVec4();
 	}
 	return initialData;
 }

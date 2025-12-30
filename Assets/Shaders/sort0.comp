@@ -38,11 +38,13 @@ void main()
 		uint id = index * SORT_OBJECT_COUNT + i;
 		if (id >= OBJECT_COUNT)
 			break;
-		ivec3 cPos = ivec3(data[id].position / CHUNK_COUNT_SIDE);
+		ivec3 cPos = ivec3(data[id].position * CHUNK_COUNT_SIDE / WORLD_SIZE);
 		uint flatIndex = cPos.x + ((cPos.z * CHUNK_COUNT_SIDE) + cPos.y) * CHUNK_COUNT_SIDE;
 		
 		uint targetChunk = flatIndex * SORT_THREAD_OBJECT_PER_CHUNK;
 		uint chunkCount = lists[bufferOffset + targetChunk];
+		if (chunkCount >= SORT_THREAD_OBJECT_PER_CHUNK)
+			continue;
 		lists[bufferOffset + targetChunk] = chunkCount + 1;
 		lists[bufferOffset + targetChunk + chunkCount + 1] = id;
 	}

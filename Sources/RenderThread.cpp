@@ -213,7 +213,7 @@ bool RenderThread::InitDevice(u32 targetDevice)
 	vkb::InstanceBuilder instanceBuilder;
 	instanceBuilder.enable_extension(VK_KHR_SURFACE_EXTENSION_NAME);
 	instanceBuilder.enable_extension(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
-	instanceBuilder.set_app_name("Vulkan Demo").set_app_version(VK_MAKE_VERSION(1, 0, 0));
+	instanceBuilder.set_app_name("Vulkan Demo").set_app_version(VK_MAKE_VERSION(1, 4, 0));
 	instanceBuilder.set_engine_name("Ligma Engine").request_validation_layers();
 
 	instanceBuilder.set_debug_callback([](VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
@@ -277,7 +277,12 @@ bool RenderThread::InitDevice(u32 targetDevice)
 	features.logicOp = VK_TRUE;
 	features.samplerAnisotropy = VK_TRUE;
 	physicalDevice.enable_features_if_present(features);
+	physicalDevice.enable_extension_if_present(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
 	vkb::DeviceBuilder deviceBuilder{ physicalDevice };
+	VkPhysicalDeviceSynchronization2Features syncFeatures = {};
+	syncFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES;
+	syncFeatures.synchronization2 = VK_TRUE;
+	deviceBuilder.add_pNext<VkPhysicalDeviceSynchronization2Features>(&syncFeatures);
 
 	auto deviceRet = deviceBuilder.build();
 	if (!deviceRet)
@@ -803,15 +808,13 @@ u32 align(unsigned int x, unsigned int a)
 bool RenderThread::CreateObjectBuffers(u32 objectCount)
 {
 	VkDeviceSize bufferSizeA = sizeof(Mat4);
-	renderData.sizeObjects = align(sizeof(Vec4) * objectCount * 4, 0x40);
+	renderData.sizeObjects = align(sizeof(Vec4) * 4 * objectCount, 0x40);
 	renderData.sizeSortBuf = align(SORT_THREAD_COUNT * CHUNK_COUNT * SORT_THREAD_OBJECT_PER_CHUNK * sizeof(u32), 0x40);
 	renderData.sizeMergeBuf = align(MAX_OBJECTS_PER_CHUNK * CHUNK_COUNT * sizeof(u32), 0x40);
 	renderData.mainBufSize = renderData.sizeObjects + renderData.sizeSortBuf + renderData.sizeMergeBuf;
 	VkDeviceSize bufferSizeB = renderData.mainBufSize;
 	renderData.objectBuffers.resize(renderData.swapchainImageViews.size());
 	renderData.objectBuffersMemory.resize(renderData.swapchainImageViews.size());
-	renderData.computeBuffers.resize(renderData.swapchainImageViews.size());
-	renderData.computeBuffersMemory.resize(renderData.swapchainImageViews.size());
 	renderData.objectBuffersMapped.resize(renderData.swapchainImageViews.size());
 
 	VkBuffer stagingBuffer;
@@ -832,14 +835,6 @@ bool RenderThread::CreateObjectBuffers(u32 objectCount)
 								VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 								renderData.objectBuffers[i],
 								renderData.objectBuffersMemory[i]);
-
-		success &= CreateBuffer(bufferSizeB,
-								VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-								VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-								renderData.computeBuffers[i],
-								renderData.computeBuffersMemory[i]);
-
-		CopyBuffer(stagingBuffer, renderData.computeBuffers[i], bufferSizeB);
 	
 		success &= appData.disp.mapMemory(	renderData.objectBuffersMemory[i],
 											0,
@@ -847,6 +842,14 @@ bool RenderThread::CreateObjectBuffers(u32 objectCount)
 											0,
 											reinterpret_cast<void**>(&renderData.objectBuffersMapped[i])) == VK_SUCCESS;
 	}
+
+	success &= CreateBuffer(bufferSizeB,
+		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+		renderData.computeBuffer,
+		renderData.computeBufferMemory);
+
+	CopyBuffer(stagingBuffer, renderData.computeBuffer, bufferSizeB);
 
 	appData.disp.destroyBuffer(stagingBuffer, nullptr);
 	appData.disp.freeMemory(stagingBufferMemory, nullptr);
@@ -1241,23 +1244,41 @@ bool RenderThread::CreateCommandBuffers()
 
 		appData.disp.cmdDispatch(renderData.commandBuffers[i], SORT_THREAD_COUNT, 1, 1);
 
+		VkMemoryBarrier2KHR memoryBarrier0 = {};
+		memoryBarrier0.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2_KHR;
+		memoryBarrier0.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT_KHR,
+		memoryBarrier0.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT_KHR,
+		memoryBarrier0.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT_KHR,
+		memoryBarrier0.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT_KHR;
+
+		VkDependencyInfoKHR dependencyInfo0 = {};
+		dependencyInfo0.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR;
+		dependencyInfo0.memoryBarrierCount = 1;
+		dependencyInfo0.pMemoryBarriers = &memoryBarrier0;
+		//dependencyInfo0.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+		
+		appData.disp.cmdPipelineBarrier2KHR(renderData.commandBuffers[i], &dependencyInfo0);
+
 		// Sort 1
 		appData.disp.cmdBindPipeline(renderData.commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, renderData.computePipelines[1]);
 		appData.disp.cmdBindDescriptorSets(renderData.commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, renderData.computePipelineLayout, 0, 1, &renderData.computeDescriptorSets[i + MAX_FRAMES_IN_FLIGHT], 0, 0);
 
 		appData.disp.cmdDispatch(renderData.commandBuffers[i], CHUNK_COUNT_SIDE, CHUNK_COUNT_SIDE, CHUNK_COUNT_SIDE);
-		
+		appData.disp.cmdPipelineBarrier2KHR(renderData.commandBuffers[i], &dependencyInfo0);
+
 		// Sim 0
 		appData.disp.cmdBindPipeline(renderData.commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, renderData.computePipelines[2]);
 		appData.disp.cmdBindDescriptorSets(renderData.commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, renderData.computePipelineLayout, 0, 1, &renderData.computeDescriptorSets[i + MAX_FRAMES_IN_FLIGHT * 2], 0, 0);
 
 		appData.disp.cmdDispatch(renderData.commandBuffers[i], CHUNK_COUNT_SIDE, CHUNK_COUNT_SIDE, CHUNK_COUNT_SIDE);
+		appData.disp.cmdPipelineBarrier2KHR(renderData.commandBuffers[i], &dependencyInfo0);
 
 		// Sim 1
 		appData.disp.cmdBindPipeline(renderData.commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, renderData.computePipelines[3]);
 		appData.disp.cmdBindDescriptorSets(renderData.commandBuffers[i], VK_PIPELINE_BIND_POINT_COMPUTE, renderData.computePipelineLayout, 0, 1, &renderData.computeDescriptorSets[i + MAX_FRAMES_IN_FLIGHT * 3], 0, 0);
 
 		appData.disp.cmdDispatch(renderData.commandBuffers[i], CHUNK_COUNT_SIDE, CHUNK_COUNT_SIDE, CHUNK_COUNT_SIDE);
+
 
 		// Render
 		appData.disp.cmdSetViewport(renderData.commandBuffers[i], 0, 1, &viewport);
@@ -1433,22 +1454,22 @@ bool RenderThread::CreateDescriptorSets()
 		bufferInfoUBO.range = sizeof(Mat4);
 
 		VkDescriptorBufferInfo bufferInfoLast = {};
-		bufferInfoLast.buffer = renderData.computeBuffers[(i + MAX_FRAMES_IN_FLIGHT - 1) % MAX_FRAMES_IN_FLIGHT];
+		bufferInfoLast.buffer = renderData.computeBuffer;
 		bufferInfoLast.offset = 0;
 		bufferInfoLast.range = renderData.sizeObjects;
 
 		VkDescriptorBufferInfo bufferInfoObjects = {};
-		bufferInfoObjects.buffer = renderData.computeBuffers[i];
+		bufferInfoObjects.buffer = renderData.computeBuffer;
 		bufferInfoObjects.offset = 0;
 		bufferInfoObjects.range = renderData.sizeObjects;
 
 		VkDescriptorBufferInfo bufferInfoMerge = {};
-		bufferInfoMerge.buffer = renderData.computeBuffers[i];
+		bufferInfoMerge.buffer = renderData.computeBuffer;
 		bufferInfoMerge.offset = renderData.sizeObjects;
 		bufferInfoMerge.range = renderData.sizeMergeBuf;
 
 		VkDescriptorBufferInfo bufferInfoSort = {};
-		bufferInfoSort.buffer = renderData.computeBuffers[i];
+		bufferInfoSort.buffer = renderData.computeBuffer;
 		bufferInfoSort.offset = renderData.sizeObjects + renderData.sizeMergeBuf;
 		bufferInfoSort.range = renderData.sizeSortBuf;
 
@@ -1710,9 +1731,9 @@ void RenderThread::Cleanup()
 	{
 		appData.disp.destroyBuffer(renderData.objectBuffers[i], nullptr);
 		appData.disp.freeMemory(renderData.objectBuffersMemory[i], nullptr);
-		appData.disp.destroyBuffer(renderData.computeBuffers[i], nullptr);
-		appData.disp.freeMemory(renderData.computeBuffersMemory[i], nullptr);
 	}
+	appData.disp.destroyBuffer(renderData.computeBuffer, nullptr);
+	appData.disp.freeMemory(renderData.computeBufferMemory, nullptr);
 
 	appData.disp.destroyPipeline(renderData.graphicsPipeline, nullptr);
 	for (u32 i = 0; i < 4; i++)

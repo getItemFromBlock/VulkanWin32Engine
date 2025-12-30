@@ -36,7 +36,7 @@ void main()
 		
 		for (uint j = 0; j < chunkCount; j++)
 		{
-			uint id = lists[offset + j];
+			uint id = lists[offset + j + 1];
 			if (id >= OBJECT_COUNT) // invalid id?
 				break;
 			mergeCount++;

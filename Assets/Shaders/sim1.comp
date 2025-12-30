@@ -34,16 +34,16 @@ void main()
 		const uint id = OBJECT_UPDATE_COUNT * index + i;
 		if (id > OBJECT_COUNT)
 			break;
-		vec3 newVel = data[i].velocity + data[i].accel * deltaTime;
+		vec3 newVel = data[id].velocity + data[id].accel * deltaTime;
 		float len = length(newVel);
 		if (len > BOID_MAX_SPEED)
 		{
 			newVel = normalize(newVel) * BOID_MAX_SPEED;
 		}
-		data[i].velocity = newVel;
+		data[id].velocity = newVel;
 		
 		const float size = float(WORLD_SIZE);
-		vec3 newPos = data[i].position + data[i].velocity * deltaTime;
+		vec3 newPos = data[id].position + data[id].velocity * deltaTime;
 		if (newPos.x < 0)
 			newPos.x += size;
 		else if (newPos.x >= size)
@@ -57,7 +57,7 @@ void main()
 		else if (newPos.z >= size)
 			newPos.z -= size;
 	
-		data[i].position = newPos;
-		data[i].rotation = vec4(0,0,0,1);
+		data[id].position = newPos;
+		//data[id].rotation = vec4(0,0,0,1);
 	}
 }

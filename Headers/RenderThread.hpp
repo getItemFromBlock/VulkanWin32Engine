@@ -73,8 +73,8 @@ struct RenderData
 	std::vector<VkDeviceMemory> objectBuffersMemory;
 	std::vector<Maths::Vec4*> objectBuffersMapped;
 
-	std::vector<VkBuffer> computeBuffers;
-	std::vector<VkDeviceMemory> computeBuffersMemory;
+	VkBuffer computeBuffer;
+	VkDeviceMemory computeBufferMemory;
 
 	VkBuffer vertexBuffer;
 	VkDeviceMemory vertexBufferMemory;

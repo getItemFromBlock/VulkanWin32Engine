@@ -244,7 +244,7 @@ LRESULT CALLBACK WndProc(_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM wParam, 
 			default:
 			    break;    
 		}
-
+		/*
 		if (isKeyDown)
 		{
 			std::stringstream stream;
@@ -254,7 +254,7 @@ LRESULT CALLBACK WndProc(_In_ HWND hWnd, _In_ UINT message, _In_ WPARAM wParam, 
 			stream1 << "0x"  << std::setfill('0') << std::setw(sizeof(u16)*2)  << std::hex << scanCode;
 			GameThread::LogMessage(std::to_string(scanCode) + " (" + stream1.str() + ")\n");
 		}
-
+		*/
 		gh.SetKeyState((u8)(wParam), (u8)(scanCode), isKeyDown);
 		if (isKeyDown && (lParam & 0x20000000) && wParam == VK_F4)
 			DestroyWindow(hWnd);
