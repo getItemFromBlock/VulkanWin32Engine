@@ -11,23 +11,11 @@
 
 #include "Maths/Maths.hpp"
 
-const u32 OBJECT_COUNT = 65536;
-const u32 WORLD_SIZE = 500;
-const u32 MAX_GROUP_COUNT = 1024;
-const u32 CHUNK_COUNT_SIDE = 32;
-const u32 CHUNK_COUNT = CHUNK_COUNT_SIDE * CHUNK_COUNT_SIDE * CHUNK_COUNT_SIDE;
-const u32 MAX_OBJECTS_PER_CHUNK = OBJECT_COUNT * 4 / CHUNK_COUNT + 1;
-const u32 SORT_THREAD_COUNT = 64;
-const u32 SORT_OBJECT_COUNT = (OBJECT_COUNT + SORT_THREAD_COUNT - 1) / SORT_THREAD_COUNT;
-const u32 SORT_THREAD_OBJECT_PER_CHUNK = MAX_OBJECTS_PER_CHUNK / 4 + 1;
-const u32 BLOCK_SIZE_Z = (CHUNK_COUNT + MAX_GROUP_COUNT - 1) / MAX_GROUP_COUNT;
-const u32 CHUNK_COUNT_SIDE_Z = CHUNK_COUNT_SIDE / BLOCK_SIZE_Z;
+typedef u32 uint;
+#include "../Assets/Shaders/shaderSimData.h"
 
 const u32 CELL_SIZE = 64;
 const u32 BOID_CHUNK = 512;
-const float BOID_DIST_MAX = 64.0f;
-const float BOID_DIST_MIN = 12.0f;
-const float BOID_MAX_SPEED = 250.0f;
 const float BOID_CURSOR_DIST = 256.0f;
 
 struct PoolTask
