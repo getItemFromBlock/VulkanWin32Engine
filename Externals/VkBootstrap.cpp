@@ -1552,6 +1552,14 @@ Result<uint32_t> Device::get_queue_index(QueueType type) const {
             index = detail::get_separate_queue_index(queue_families, VK_QUEUE_TRANSFER_BIT, VK_QUEUE_COMPUTE_BIT);
             if (index == detail::QUEUE_INDEX_MAX_VALUE) return Result<uint32_t>{ QueueError::transfer_unavailable };
             break;
+        case QueueType::video_decode:
+            index = detail::get_first_queue_index(queue_families, VK_QUEUE_VIDEO_DECODE_BIT_KHR);
+            if (index == detail::QUEUE_INDEX_MAX_VALUE) return Result<uint32_t>{ QueueError::transfer_unavailable };
+            break;
+        case QueueType::video_encode:
+            index = detail::get_first_queue_index(queue_families, VK_QUEUE_VIDEO_ENCODE_BIT_KHR);
+            if (index == detail::QUEUE_INDEX_MAX_VALUE) return Result<uint32_t>{ QueueError::transfer_unavailable };
+            break;
         default:
             return Result<uint32_t>{ QueueError::invalid_queue_family_index };
     }

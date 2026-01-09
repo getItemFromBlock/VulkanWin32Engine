@@ -735,7 +735,7 @@ class PhysicalDeviceSelector {
 };
 
 // ---- Queue ---- //
-enum class QueueType { present, graphics, compute, transfer };
+enum class QueueType { present, graphics, compute, transfer, video_decode, video_encode };
 
 namespace detail {
 // Sentinel value, used in implementation only

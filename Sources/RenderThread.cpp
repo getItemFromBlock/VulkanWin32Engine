@@ -363,6 +363,15 @@ bool RenderThread::GetQueues()
 		renderData.transferQueue = renderData.graphicsQueue;
 	else
 		renderData.transferQueue = tq.value();
+
+	auto vq = appData.device.get_queue(vkb::QueueType::video_decode);
+	if (!vq.has_value())
+	{
+		GameThread::SendErrorPopup("failed to get video decode queue: " + vq.error().message());
+		return false;
+	}
+	renderData.videoDecodeQueue = vq.value();
+
 	return true;
 }
 
