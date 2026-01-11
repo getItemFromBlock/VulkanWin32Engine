@@ -252,8 +252,10 @@
     <ClCompile Include="Sources\RenderThread.cpp" />
     <ClCompile Include="Sources\Resource\Mesh.cpp" />
     <ClCompile Include="Sources\Resource\Texture.cpp" />
+    <ClCompile Include="Sources\Resource\Video.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Externals\minimp4.h" />
     <ClInclude Include="Externals\stb_image.h" />
     <ClInclude Include="Externals\stb_image_write.h" />
     <ClInclude Include="Externals\VkBootstrap.h" />
@@ -267,6 +269,7 @@
     <ClInclude Include="Headers\RenderThread.hpp" />
     <ClInclude Include="Headers\Resource\Mesh.hpp" />
     <ClInclude Include="Headers\Resource\Texture.hpp" />
+    <ClInclude Include="Headers\Resource\Video.hpp" />
     <ClInclude Include="Headers\Types.hpp" />
   </ItemGroup>
   <ItemGroup>

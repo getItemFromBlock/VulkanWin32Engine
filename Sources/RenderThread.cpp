@@ -1,6 +1,7 @@
 #include "RenderThread.hpp"
 
 #include "Resource/Texture.hpp"
+#include "Resource/Video.hpp"
 
 #include <filesystem>
 #include <time.h>
@@ -139,7 +140,8 @@ bool RenderThread::InitVulkan(u32 targetDevice)
 			CreateDepthResources() &&
 			CreateFramebuffers() &&
 			CreateCommandPool() &&
-			CreateTextureImage() &&
+			CreateTextureImage("Assets/Textures/blocks.png") &&
+			PreloadVideo("Assets/cat.mp4") &&
 			CreateTextureImageView() &&
 			CreateTextureSampler() &&
 			CreateVertexBuffer(sceneData.mesh) &&
@@ -278,6 +280,9 @@ bool RenderThread::InitDevice(u32 targetDevice)
 	features.samplerAnisotropy = VK_TRUE;
 	physicalDevice.enable_features_if_present(features);
 	physicalDevice.enable_extension_if_present(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
+	physicalDevice.enable_extension_if_present(VK_KHR_VIDEO_QUEUE_EXTENSION_NAME);
+	physicalDevice.enable_extension_if_present(VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME);
+	physicalDevice.enable_extension_if_present(VK_KHR_VIDEO_DECODE_H264_EXTENSION_NAME);
 	vkb::DeviceBuilder deviceBuilder{ physicalDevice };
 	VkPhysicalDeviceSynchronization2Features syncFeatures = {};
 	syncFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES;
@@ -917,10 +922,10 @@ bool RenderThread::CreateCommandPool()
 	return true;
 }
 
-bool RenderThread::CreateTextureImage()
+bool RenderThread::CreateTextureImage(const std::string& path)
 {
 	IVec2 res;
-	u8 *pixels = Resource::Texture::ReadTexture("Assets/Textures/blocks.png", res);
+	u8 *pixels = Resource::Texture::ReadTexture(path.c_str(), res);
 	if (!pixels)
 	{
 		GameThread::SendErrorPopup("failed to load texture");
@@ -949,6 +954,12 @@ bool RenderThread::CreateTextureImage()
 	appData.disp.destroyBuffer(stagingBuffer, nullptr);
 	appData.disp.freeMemory(stagingBufferMemory, nullptr);
 
+	return true;
+}
+
+bool RenderThread::PreloadVideo(const std::string &path)
+{
+	std::vector<std::vector<u8>> fileData = Resource::Video::ReadVideoFrames(path);
 	return true;
 }
 

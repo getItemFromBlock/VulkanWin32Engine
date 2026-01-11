@@ -159,7 +159,8 @@ private:
 	bool CreateComputePipeline();
 	bool CreateFramebuffers();
 	bool CreateCommandPool();
-	bool CreateTextureImage();
+	bool CreateTextureImage(const std::string& path);
+	bool PreloadVideo(const std::string &path);
 	VkImageView CreateImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags);
 	bool CreateTextureImageView();
 	bool CreateTextureSampler();
