@@ -74,9 +74,9 @@ void main()
 	{
 		uint boid1 = sorted[bufferOffset + index1 + 1];
 	
-		vec3 globalPos;
-		vec3 globalRot;
-		vec3 avoidDir;
+		vec3 globalPos = vec3(0);
+		vec3 globalRot = vec3(0);
+		vec3 avoidDir = vec3(0);
 		uint count = 0;
 		uint avoidCount = 0;
 	
